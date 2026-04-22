@@ -1,0 +1,89 @@
+# INVARIANTS — 깨뜨리면 버그가 나는 규칙
+
+> Streamlit 재실행 모델과 스크래핑 계층에서 반복 발견된 함정들.
+> 새로운 버그/해결책이 나오면 여기에 I-N으로 추가한다.
+
+## 기본 원칙
+
+Streamlit은 위→아래로 스크립트를 매번 재실행한다. 위젯을 생성한 **후**에 해당 위젯의 state key를 쓰면 `StreamlitAPIException` 또는 silent desync가 난다. 따라서 **모든 state 쓰기는 run 최상단**, 위젯 인스턴스화 이전에 끝내야 한다.
+
+---
+
+## I-1 — 스크래핑 결과는 pending flag 경유
+
+검색 버튼 핸들러에서 직접 `st.session_state.sc_articles = [...]` 하지 마라. 이미 한 번 렌더된 위젯의 state가 덮어써지면서 값이 튕긴다.
+
+**✅ 올바른 패턴**
+```python
+# 최상단
+if st.session_state.get("_search_pending"):
+    kw = st.session_state["_search_pending"]
+    st.session_state.sc_articles = scraper.search_naver_news(kw)
+    del st.session_state["_search_pending"]
+
+# 나중에 (버튼)
+if st.button("검색"):
+    st.session_state["_search_pending"] = st.session_state.sc_keyword
+    st.rerun()
+```
+
+## I-2 — 위젯 state 쓰기는 최상단 pending-flag 핸들러에서만
+
+`text_input`, `selectbox` 등의 `key=`로 묶인 state는 위젯이 렌더된 뒤에는 쓸 수 없다. 쓰고 싶다면 pending flag로 다음 run의 최상단에 처리.
+
+## I-3 — `on_click=` 금지
+
+콜백은 Streamlit 내부적으로 state 쓰기 타이밍이 불투명하다. 반드시:
+```python
+if st.button("액션", key="sc_btn_search"):
+    st.session_state["_do_search"] = True
+    st.rerun()
+```
+
+## I-4 — `app.py`는 평탄 스크립트
+
+카드/배지/템플릿 등 **마크업 생성** 헬퍼는 `cardnews.py`나 `components/`로. `app.py` 내부에 `render_*` 이름 헬퍼를 두면 숨은 state 변이와 조건 분기가 섞여 추적 불가.
+
+유일한 예외: `_show_debug()`처럼 **state를 읽기만** 하고 출력하는 순수 함수.
+
+## I-5 — 도메인 필터 통과 후에만 state에 저장
+
+`fetch_latest_tech_news`의 결과에 다른 도메인(예: 구글 광고 리다이렉트) URL이 섞이면 enrich 단계에서 외부 사이트로 대량 요청이 나간다. `_same_root_domain` + `_is_plausible_article_link`를 통과한 결과만 `sc_articles`에 저장한다.
+
+## I-6 — 외부 HTTP는 `_build_session()` 경유
+
+- 재시도·백오프 정책이 한 곳에 모여 있어야 변경이 쉽다.
+- UA 로테이션과 타임아웃도 마찬가지.
+- 새 코드에서 `requests.get(...)` 직접 호출은 리뷰에서 거부.
+
+## I-7 — 본문 enrich는 `enrich_articles_parallel`만
+
+개별 기사 본문을 fetch하는 로직이 여러 곳에 퍼지면 병렬도·캐시·예외 처리가 엇갈린다. 단일 진입점만 사용.
+
+## I-8 — HTML 출력 전 `html.escape()`
+
+세션에 넣는 title/press/summary는 이미 scraper에서 escape된다는 가정이지만, **새 필드를 추가할 때**는 항상 escape를 확인. `st.markdown(..., unsafe_allow_html=True)`로 나가는 조각에 raw 문자열 삽입 금지.
+
+## I-9 — 네임스페이스 prefix
+
+| prefix | 의미 |
+|---|---|
+| `sc_*` | 스크래핑 state (e.g. `sc_articles`, `sc_keyword`, `sc_debug`) |
+| `ins_*` | 인사이트 state (e.g. `ins_selected_press`, `ins_date_range`) |
+| `cn_*` | 카드뉴스 state (e.g. `cn_selected_article`, `cn_template`) |
+| `_*_pending` | 다음 run 최상단에서 처리할 이벤트 |
+| `_do_*` | 버튼 클릭 플래그 |
+
+다른 도메인의 state를 직접 읽/쓰지 마라 (예: insights가 `sc_articles`를 복사해 `ins_df`로 파생시키는 것은 OK, 원본을 수정하는 것은 금지).
+
+## I-10 — 카드뉴스 이미지 합성은 `cardnews.render_png()` 단일 진입점
+
+- Pillow 로드, 폰트 경로, 여백 상수는 `cardnews.py` 상단에 한 번만.
+- 다른 곳에서 `PIL.ImageDraw`를 import해 직접 합성하면 폰트 경로 오차로 서버/로컬 불일치 발생.
+
+## I-11 — DataFrame 컬럼 고정
+
+`articles_to_dataframe`이 반환하는 컬럼 순서는 CSV/엑셀 export 스키마와 동일해야 한다. 컬럼 추가 시:
+1. `scraper.articles_to_dataframe` 수정
+2. `app.py`의 `_table_column_config` 동기화
+3. `CHANGELOG.md`에 schema change 명시

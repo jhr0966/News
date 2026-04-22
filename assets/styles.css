@@ -1,0 +1,124 @@
+/* News — 전역 CSS 토큰 · 컴포넌트 스타일
+ * 현재 앱은 app.py 인라인 <style>을 사용한다. 차기 세션에서 이 파일로 이관 예정.
+ * 네임스페이스:
+ *   .news-*  : 스크래퍼 페이지
+ *   .ins-*   : 인사이트 보드
+ *   .cn-*    : 카드뉴스
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600&display=swap');
+
+:root {
+    --accent:    #1D6FE8;
+    --bg:        #F7F6F2;
+    --card-bg:   #FFFFFF;
+    --border:    #E2E0D8;
+    --text-1:    #1A1918;
+    --text-2:    #5A5854;
+    --text-3:    #9A9690;
+    --green:     #1A8C5B;
+    --tag-bg:    #EEF3FD;
+    --tag-txt:   #1D6FE8;
+
+    --font-serif: 'Noto Serif KR', serif;
+    --font-sans:  'IBM Plex Sans KR', sans-serif;
+
+    --radius-card: 10px;
+    --radius-input: 6px;
+}
+
+/* ── 공통 ─────────────────────────────────────────── */
+.stApp { background: var(--bg) !important; }
+.block-container { padding: 2rem 3rem !important; max-width: 1400px !important; }
+
+/* ── 스크래퍼 카드 (.news-*) ───────────────────────── */
+.news-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 1.25rem 1.3rem;
+    margin-bottom: 1.1rem;
+    transition: box-shadow .2s, transform .2s;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+    min-height: 280px;
+}
+.news-card:hover {
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .09);
+    transform: translateY(-2px);
+}
+
+/* ── 인사이트 보드 (.ins-*) ────────────────────────── */
+.ins-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 1.5rem;
+    margin-bottom: 1.2rem;
+}
+.ins-metric {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    font-size: 2rem;
+    color: var(--text-1);
+}
+.ins-metric-label {
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* ── 카드뉴스 (.cn-*) ──────────────────────────────── */
+.cn-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 2rem;
+    width: 540px;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.cn-meta {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+.cn-press {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--tag-bg);
+    color: var(--tag-txt);
+    padding: 3px 10px;
+    border-radius: 20px;
+}
+.cn-date {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    color: var(--text-3);
+}
+.cn-title {
+    font-family: var(--font-serif);
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--text-1);
+    margin: 0;
+}
+.cn-summary {
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: var(--text-2);
+}
+.cn-keywords {
+    margin-top: auto;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    color: var(--tag-txt);
+}
