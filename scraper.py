@@ -11,12 +11,17 @@ from urllib.parse import quote, urljoin, urlparse
 from collections import Counter
 
 # ── HTML 파서 선택 ──────────────────────────────────────
-# lxml이 설치돼 있으면 속도를 위해 사용, 아니면 표준 html.parser로 fallback.
-try:
-    import lxml  # noqa: F401
-    _HTML_PARSER = "lxml"
-except ImportError:
-    _HTML_PARSER = "html.parser"
+# lxml이 실제로 사용 가능하면 lxml을, 아니면 표준 html.parser로 fallback.
+# import 성공 + bs4의 tree builder 등록까지 모두 확인(FeatureNotFound 방어).
+def _pick_parser() -> str:
+    try:
+        BeautifulSoup("<x/>", "lxml")
+        return "lxml"
+    except Exception:
+        return "html.parser"
+
+
+_HTML_PARSER = _pick_parser()
 
 
 def _soup(markup: str) -> BeautifulSoup:
