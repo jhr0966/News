@@ -107,23 +107,30 @@ def _first_tag(parent, selectors: list):
     return None
 
 
-def _find_news_items(soup: BeautifulSoup) -> list:
-    # 셀렉터별로 매치 수를 수집한 뒤 가장 많이 매치된 것을 선택 (일부 셀렉터에 단 1개만 잡혀도 무작위 반환하지 않도록)
-    best = []
+def _find_news_items(soup: BeautifulSoup, debug: bool = False) -> list:
+    """LIST_SELECTORS를 순서대로 시도해 2개 이상 매치되는 첫 셀렉터를 채택.
+    2개 이상이 전혀 없으면 1개라도 매치되는 것, 그래도 없으면 fender 루트 fallback."""
+    first_single = []
     for sel in LIST_SELECTORS:
         items = soup.select(sel)
-        if len(items) > len(best):
-            best = items
-        if len(best) >= 5:
-            break
-    if best:
-        return best
+        if debug and items:
+            print(f"[_find_news_items] '{sel}' → {len(items)}건")
+        if len(items) >= 2:
+            return items
+        if not first_single and items:
+            first_single = items
+    if first_single:
+        return first_single
 
     fender_roots = soup.select("div[data-fender-root]")
     if fender_roots:
         items = [r for r in fender_roots if r.find("a", href=lambda h: h and h.startswith("http"))]
+        if debug:
+            print(f"[_find_news_items] fender fallback → {len(items)}건")
         if items:
             return items
+    if debug:
+        print("[_find_news_items] 매치된 셀렉터 없음")
     return []
 
 
@@ -142,7 +149,9 @@ def search_naver_news(keyword: str, max_results: int = 10, debug: bool = False) 
         raise RuntimeError(f"네이버 검색 요청 실패: {e}")
 
     soup = BeautifulSoup(resp.text, "lxml")
-    items = _find_news_items(soup)
+    items = _find_news_items(soup, debug=debug)
+    if debug:
+        print(f"[search_naver_news] 후보 아이템 {len(items)}건, max_results={max_results}")
     articles = []
     seen_links = set()
 
@@ -216,14 +225,13 @@ def search_naver_news(keyword: str, max_results: int = 10, debug: bool = False) 
 
 
 # ── 2. 타겟 기술 사이트 메인 홈페이지 스크래핑 로직 ────────────────
-# 기사 링크로 보기에 무리가 없는 URL 경로 패턴
-_ARTICLE_PATH_HINTS = ("news", "article", "view", "read", "post", "story", "/20")
-# 수집에서 제외할 경로 패턴
-_NAV_PATH_HINTS = (
-    "login", "signup", "join", "member", "subscribe", "mypage",
-    "policy", "terms", "privacy", "sitemap", "about", "contact",
-    "faq", "notice", "search", "tag/", "category/", "/cat/", "rss",
-    "#", "javascript",
+# 명백한 네비게이션/비기사 경로만 차단 (과도하게 막지 않도록 최소화)
+_NAV_BLOCKLIST = (
+    "javascript:", "mailto:", "tel:",
+    "/login", "/logout", "/signup", "/join", "/member/join",
+    "/privacy", "/terms", "/policy", "/sitemap", "/rss",
+    "/tag/", "/tags/", "/category/", "/categories/", "/cat/",
+    "/search?", "/search.",
 )
 
 
@@ -233,30 +241,34 @@ def _root_domain(host: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
-def _looks_like_article_link(href: str, site_host: str) -> bool:
+def _same_root_domain(candidate_host: str, site_host: str) -> bool:
+    if not candidate_host:
+        return True  # 상대 경로는 허용
+    root = _root_domain(site_host)
+    cand = _root_domain(candidate_host)
+    return cand == root or cand.endswith("." + root)
+
+
+def _is_plausible_article_link(href: str, site_host: str) -> bool:
+    """최소한의 도메인/네비게이션 필터만 적용. 제목 길이로 대부분 걸러진다는 가정."""
     if not href:
         return False
     lower = href.lower()
-    if any(bad in lower for bad in _NAV_PATH_HINTS):
+    if any(bad in lower for bad in _NAV_BLOCKLIST):
+        return False
+    if href.startswith("#"):
         return False
     try:
         parsed = urlparse(href)
     except ValueError:
         return False
-    # 동일 루트 도메인(또는 그 서브도메인)만 허용
-    if parsed.netloc:
-        root = _root_domain(site_host)
-        cand = _root_domain(parsed.netloc)
-        if not (cand == root or cand.endswith("." + root)):
-            return False
-    path = parsed.path or ""
-    if len(path) < 5:
+    if not _same_root_domain(parsed.netloc, site_host):
         return False
-    if any(h in lower for h in _ARTICLE_PATH_HINTS):
-        return True
-    if re.search(r"/\d{4,}", path):
-        return True
-    return False
+    # 경로가 너무 짧으면(홈, 루트 등) 제외
+    path = (parsed.path or "").rstrip("/")
+    if len(path) < 2:
+        return False
+    return True
 
 
 def fetch_latest_tech_news(site_name: str, site_url: str, max_results: int = 10, debug: bool = False) -> list[dict]:
@@ -265,14 +277,22 @@ def fetch_latest_tech_news(site_name: str, site_url: str, max_results: int = 10,
     try:
         time.sleep(random.uniform(0.5, 1.2))
         resp = session.get(site_url, headers=_headers(), timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
+        # raise_for_status는 생략 — 일부 사이트가 비정상 코드여도 유효 HTML을 반환하는 경우 존재
+        if resp.status_code >= 400:
+            if debug:
+                print(f"[{site_name}] HTTP {resp.status_code} 수신 — 파싱 계속 시도")
 
         soup = BeautifulSoup(resp.text, "lxml")
+        all_anchors = soup.find_all("a", href=True)
+        if debug:
+            print(f"[{site_name}] 전체 앵커 {len(all_anchors)}개 스캔")
+
         articles = []
         seen_links = set()
         seen_titles = set()
+        rejected = {"short_title": 0, "not_plausible": 0, "dup": 0}
 
-        for a in soup.find_all("a", href=True):
+        for a in all_anchors:
             if len(articles) >= max_results:
                 break
 
@@ -280,12 +300,15 @@ def fetch_latest_tech_news(site_name: str, site_url: str, max_results: int = 10,
             title = a.get_text(strip=True)
 
             if len(title) <= MIN_TITLE_LEN or title in seen_titles:
+                rejected["short_title"] += 1
                 continue
 
             full_link = urljoin(site_url, href)
             if full_link in seen_links:
+                rejected["dup"] += 1
                 continue
-            if not _looks_like_article_link(full_link, site_host):
+            if not _is_plausible_article_link(full_link, site_host):
+                rejected["not_plausible"] += 1
                 continue
 
             img_url = ""
@@ -310,10 +333,13 @@ def fetch_latest_tech_news(site_name: str, site_url: str, max_results: int = 10,
                 "keywords": "",
                 "img_url": img_url
             })
+
+        if debug:
+            print(f"[{site_name}] 수집 {len(articles)}건, 거부: {rejected}")
         return articles
     except Exception as e:
         if debug:
-            print(f"[{site_name}] 크롤링 실패: {e}")
+            print(f"[{site_name}] 크롤링 실패: {type(e).__name__}: {e}")
         return []
 
 

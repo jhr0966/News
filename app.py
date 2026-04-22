@@ -369,10 +369,12 @@ elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
         help="향후 코드 상단 TARGET_SITES 변수에 URL만 추가하면 이 목록에 자동으로 나타납니다."
     )
 
-    col1, col2 = st.columns([1, 4])
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col1:
         tech_max_results = st.selectbox("수집 건수 (각 사이트당)", [5, 10, 15, 20], index=1, key="max_tech")
-    
+    with col3:
+        tech_debug = st.checkbox("🔧 디버그", value=False, key="dbg_tech")
+
     st.markdown("버튼을 누르면 위에서 선택된 사이트들의 홈페이지 메인에 노출된 최신 기사들을 자동으로 수집하고 탭으로 분류합니다.")
     fetch_tech_clicked = st.button("🔄 최신 기사 일괄 수집하기", use_container_width=True)
 
@@ -390,11 +392,15 @@ elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
             num_sites = len(active_targets)
             weight_per_site = 100 / num_sites
 
+            import io as _io, contextlib
+            log_buf = _io.StringIO()
+
             try:
                 for site_idx, (site_name, site_url) in enumerate(active_targets):
                     status_box.markdown(f"🌐 **{html.escape(site_name)}** 메인 페이지 접속 중...")
 
-                    raw_arts = fetch_latest_tech_news(site_name, site_url, max_results=tech_max_results)
+                    with contextlib.redirect_stdout(log_buf):
+                        raw_arts = fetch_latest_tech_news(site_name, site_url, max_results=tech_max_results, debug=tech_debug)
                     total = len(raw_arts)
 
                     if total == 0:
@@ -413,16 +419,24 @@ elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
                     collected.extend(raw_arts)
 
                 st.session_state.articles_tech = collected
+                st.session_state.debug_log = log_buf.getvalue()
                 status_box.empty(); prog_bar.empty()
-                st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+                if collected:
+                    st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+                else:
+                    st.warning("⚠️ 수집된 기사가 0건입니다. 디버그 체크박스를 켜고 다시 시도해 원인을 확인해보세요.")
 
             except Exception as e:
+                st.session_state.debug_log = log_buf.getvalue()
                 status_box.empty(); prog_bar.empty()
                 st.error(f"❌ 수집 중 오류 발생: {e}")
 
     # 결과 출력 (mode="tech"를 넘겨주면 탭이 자동으로 나뉨)
     if st.session_state.articles_tech:
         render_results(st.session_state.articles_tech, "선택 사이트 최신 기사", "tech", mode="tech")
+        if tech_debug: _show_debug()
+    elif tech_debug and st.session_state.debug_log:
+        _show_debug()
     else:
         st.markdown("""<div style="margin-top:4rem;text-align:center;color:var(--text-3);">
             <div style="font-size:3rem;margin-bottom:1rem;">🤖</div>
