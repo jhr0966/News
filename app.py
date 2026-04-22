@@ -1,11 +1,19 @@
 import streamlit as st
 import pandas as pd
 import io
-import time
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import quote
-from scraper import search_naver_news, fetch_latest_tech_news, fetch_article_content, extract_keywords, articles_to_dataframe, _headers
+import re
+import html
+from scraper import (
+    search_naver_news,
+    fetch_latest_tech_news,
+    enrich_articles_parallel,
+    articles_to_dataframe,
+)
+
+
+def _safe_filename(text: str, fallback: str = "news") -> str:
+    cleaned = re.sub(r"[^0-9A-Za-z가-힣_-]+", "_", text or "").strip("_")
+    return cleaned[:40] or fallback
 
 # ── 💡 향후 스크래핑할 사이트를 추가하려면 이 딕셔너리에 추가만 하시면 됩니다! ──
 TARGET_SITES = {
@@ -111,44 +119,59 @@ with st.sidebar:
 # ─────────────────────────────────────────────
 # 공통 UI 렌더링 함수 (재사용)
 # ─────────────────────────────────────────────
-def render_cards_html(arts, global_all_articles):
-    """카드뉴스를 그려주는 HTML 헬퍼 함수"""
+def render_cards_html(arts, index_map):
+    """카드뉴스를 그려주는 HTML 헬퍼 함수.
+
+    index_map: id(article) -> 전체 목록 기준 1-based 번호
+    """
     if not arts:
         st.info("조건에 맞는 기사가 없습니다.")
         return
-        
+
     cols_per_row = 3
     rows = [arts[i:i+cols_per_row] for i in range(0, len(arts), cols_per_row)]
     for row in rows:
         cols = st.columns(cols_per_row, gap="medium")
         for col, art in zip(cols, row):
             with col:
-                title   = art.get("title", "제목 없음")
-                press   = art.get("press", "")
-                date    = art.get("date",  "")
-                link    = art.get("link",  "#")
-                summary = art.get("summary", "")
-                content = art.get("content", "")
-                img_url = art.get("img_url", "")
-                num     = global_all_articles.index(art) + 1 # 전체 목록 기준 고유 번호 유지
+                title_raw   = art.get("title", "제목 없음")
+                press_raw   = art.get("press", "")
+                date_raw    = art.get("date", "")
+                link_raw    = art.get("link", "#")
+                summary_raw = art.get("summary", "")
+                content_raw = art.get("content", "")
+                img_url_raw = art.get("img_url", "")
+                num         = index_map.get(id(art), 0)
 
-                body_text = content if len(content) > 50 else summary
-                body_text = body_text[:300] + ("..." if len(body_text) > 300 else "")
+                body_source = content_raw if len(content_raw) > 50 else summary_raw
+                if len(body_source) > 300:
+                    body_source = body_source[:300] + "..."
+
+                # ── XSS 방어: 스크랩한 모든 문자열을 HTML 이스케이프 ──
+                title   = html.escape(title_raw)
+                press   = html.escape(press_raw)
+                date    = html.escape(date_raw)
+                body    = html.escape(body_source) if body_source else "본문 내용 없음"
+                # URL은 속성 컨텍스트이므로 quote=True로 " ' 도 이스케이프, 스킴 검증
+                link    = html.escape(link_raw, quote=True) if link_raw.startswith(("http://", "https://")) else "#"
+                img_url = html.escape(img_url_raw, quote=True) if img_url_raw.startswith(("http://", "https://")) else ""
 
                 keywords_str = art.get("keywords", "")
                 kw_html = ""
                 if keywords_str:
-                    kw_list = keywords_str.split(',')
-                    kw_badges = "".join([f'<span class="keyword-badge">#{k.strip()}</span>' for k in kw_list if k.strip()])
+                    kw_list = [k.strip() for k in keywords_str.split(',') if k.strip()]
+                    kw_badges = "".join(
+                        f'<span class="keyword-badge">#{html.escape(k)}</span>' for k in kw_list
+                    )
                     kw_html = f'<div class="card-keywords">{kw_badges}</div>'
 
                 press_html = f'<span class="card-press">{press}</span>' if press else ""
                 date_html  = f'<span class="card-date">{date}</span>'   if date  else ""
-                
+
                 if img_url:
                     img_html = f'<img src="{img_url}" class="card-img" alt="기사 썸네일">'
                 else:
-                    img_html = f'<div class="card-img-placeholder">No Image</div>'
+                    img_html = '<div class="card-img-placeholder">No Image</div>'
 
                 st.markdown(f"""
 <div class="news-card">
@@ -159,23 +182,37 @@ def render_cards_html(arts, global_all_articles):
 </div>
 <div class="card-title">{title}</div>
 {kw_html}
-<div class="card-body">{body_text or '본문 내용 없음'}</div>
-<div class="card-link"><a href="{link}" target="_blank">원문 보기 →</a></div>
+<div class="card-body">{body}</div>
+<div class="card-link"><a href="{link}" target="_blank" rel="noopener noreferrer">원문 보기 →</a></div>
 </div>
 """, unsafe_allow_html=True)
+
+
+def _table_column_config():
+    return {
+        "링크": st.column_config.LinkColumn("링크", display_text="열기"),
+        "이미지URL": st.column_config.LinkColumn("이미지URL", display_text="보기"),
+        "제목": st.column_config.TextColumn("제목", width="medium"),
+        "본문내용": st.column_config.TextColumn("본문내용", width="large"),
+        "추출키워드": st.column_config.TextColumn("추출키워드", width="medium"),
+    }
 
 
 def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
     if not articles:
         return
-        
+
+    # 전체 목록 기준 1-based 고유 번호 (id 기반이라 동일 dict 오매칭 없음)
+    index_map = {id(a): i + 1 for i, a in enumerate(articles)}
+
     # 필터링 로직
     all_kws = set()
     for art in articles:
         if art.get("keywords"):
             for k in art["keywords"].split(","):
-                if k.strip(): all_kws.add(k.strip())
-    
+                if k.strip():
+                    all_kws.add(k.strip())
+
     st.markdown("##### 🏷️ 키워드 필터링")
     selected_kws = st.multiselect(
         "기사에서 추출된 핵심 단어로 결과를 필터링해보세요.",
@@ -198,7 +235,7 @@ def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
     st.markdown(f"""
     <div class="result-bar">
         <span style="font-size:.85rem;color:var(--text-2);">조회 기준</span>
-        <span class="result-kw">"{keyword_display}"</span>
+        <span class="result-kw">"{html.escape(keyword_display)}"</span>
         <span class="result-count">— 총 {len(articles)}건 중 {len(filtered_articles)}건 표시</span>
         <span class="result-badge">완료</span>
     </div>
@@ -206,10 +243,11 @@ def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
 
     csv_buf = io.StringIO()
     df.to_csv(csv_buf, encoding="utf-8-sig")
+    csv_name = f"news_{_safe_filename(keyword_display, session_key_prefix)}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.csv"
     st.download_button(
         label="⬇ CSV 다운로드",
         data=csv_buf.getvalue().encode("utf-8-sig"),
-        file_name=f"news_data_{session_key_prefix}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.csv",
+        file_name=csv_name,
         mime="text/csv",
         key=f"dl_{session_key_prefix}"
     )
@@ -221,40 +259,31 @@ def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
         # 네이버는 탭 분리 없이 통합 표시
         tab_card, tab_table = st.tabs(["🗞 통합 카드뉴스", "📊 데이터 테이블"])
         with tab_card:
-            render_cards_html(filtered_articles, articles)
+            render_cards_html(filtered_articles, index_map)
         with tab_table:
-            st.dataframe(
-                df, use_container_width=True, height=500,
-                column_config={"링크": st.column_config.LinkColumn("링크", display_text="열기"), "이미지URL": st.column_config.LinkColumn("이미지URL", display_text="보기"), "제목": st.column_config.TextColumn("제목", width="medium"), "본문내용": st.column_config.TextColumn("본문내용", width="large"), "추출키워드": st.column_config.TextColumn("추출키워드", width="medium")},
-            )
-            
+            st.dataframe(df, use_container_width=True, height=500, column_config=_table_column_config())
+
     elif mode == "tech":
         # 최신 동향은 스크래핑된 사이트(Press) 목록을 파악하여 동적으로 탭 생성
         presses = []
         for art in filtered_articles:
             if art["press"] not in presses:
                 presses.append(art["press"])
-                
+
         if not presses:
             st.info("선택한 키워드가 포함된 기사가 없습니다.")
             return
 
-        # 탭 제목 생성 (사이트별 이름 + 묶음 데이터 테이블)
         tab_titles = [f"🗞 {p}" for p in presses] + ["📊 전체 데이터 테이블"]
         tabs = st.tabs(tab_titles)
-        
-        # 1. 사이트별 탭에 카드 렌더링
+
         for i, p_name in enumerate(presses):
             with tabs[i]:
                 site_arts = [a for a in filtered_articles if a["press"] == p_name]
-                render_cards_html(site_arts, articles)
-                
-        # 2. 마지막 탭에 전체 데이터프레임 렌더링
+                render_cards_html(site_arts, index_map)
+
         with tabs[-1]:
-             st.dataframe(
-                df, use_container_width=True, height=500,
-                column_config={"링크": st.column_config.LinkColumn("링크", display_text="열기"), "이미지URL": st.column_config.LinkColumn("이미지URL", display_text="보기"), "제목": st.column_config.TextColumn("제목", width="medium"), "본문내용": st.column_config.TextColumn("본문내용", width="large"), "추출키워드": st.column_config.TextColumn("추출키워드", width="medium")},
-            )
+            st.dataframe(df, use_container_width=True, height=500, column_config=_table_column_config())
 
 # ─────────────────────────────────────────────
 # 화면 1: 네이버 뉴스 검색
@@ -280,12 +309,11 @@ if app_mode == "🔍 네이버 뉴스 검색":
     if search_clicked and keyword.strip():
         st.session_state.keyword_naver = keyword.strip()
         st.session_state.articles_naver = []
-        collected = []
 
         import io as _io, contextlib
         status_box = st.empty()
         prog_bar   = st.progress(0)
-        status_box.markdown(f"🔍 **'{keyword}'** 검색 중...")
+        status_box.markdown(f"🔍 **'{html.escape(keyword)}'** 검색 중...")
 
         try:
             log_buf = _io.StringIO()
@@ -298,19 +326,17 @@ if app_mode == "🔍 네이버 뉴스 검색":
                 st.warning("⚠️ 검색 결과 0건")
             else:
                 total = len(arts_list)
-                for i, art in enumerate(arts_list):
-                    if art["link"]:
-                        content, high_res_img = fetch_article_content(art["link"])
-                        art["content"] = content
-                        if high_res_img: art["img_url"] = high_res_img
-                        art["keywords"] = extract_keywords(content)
-                    collected.append(art)
-                    prog_bar.progress(int((i + 1) / total * 100))
-                    status_box.markdown(f"📄 기사 수집 중 **{i+1}/{total}** — {art.get('title','')[:40]}...")
 
-                st.session_state.articles_naver = collected
+                def on_progress(done, total_, art):
+                    prog_bar.progress(int(done / total_ * 100))
+                    title_preview = html.escape((art.get("title", "") if art else "")[:40])
+                    status_box.markdown(f"📄 기사 수집 중 **{done}/{total_}** — {title_preview}...")
+
+                enrich_articles_parallel(arts_list, progress_cb=on_progress)
+
+                st.session_state.articles_naver = arts_list
                 status_box.empty(); prog_bar.empty()
-                st.success(f"✅ 네이버 뉴스 **{len(collected)}건** 수집 완료!")
+                st.success(f"✅ 네이버 뉴스 **{total}건** 수집 완료!")
         except Exception as e:
             status_box.empty(); prog_bar.empty()
             st.error(f"❌ 오류 발생: {e}")
@@ -343,10 +369,12 @@ elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
         help="향후 코드 상단 TARGET_SITES 변수에 URL만 추가하면 이 목록에 자동으로 나타납니다."
     )
 
-    col1, col2 = st.columns([1, 4])
+    col1, col2, col3 = st.columns([1, 3, 1])
     with col1:
         tech_max_results = st.selectbox("수집 건수 (각 사이트당)", [5, 10, 15, 20], index=1, key="max_tech")
-    
+    with col3:
+        tech_debug = st.checkbox("🔧 디버그", value=False, key="dbg_tech")
+
     st.markdown("버튼을 누르면 위에서 선택된 사이트들의 홈페이지 메인에 노출된 최신 기사들을 자동으로 수집하고 탭으로 분류합니다.")
     fetch_tech_clicked = st.button("🔄 최신 기사 일괄 수집하기", use_container_width=True)
 
@@ -356,46 +384,59 @@ elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
         else:
             st.session_state.articles_tech = []
             collected = []
-            
+
             status_box = st.empty()
             prog_bar   = st.progress(0)
 
-            # 선택된 사이트만 추려내서 반복문 실행
             active_targets = [(name, TARGET_SITES[name]) for name in selected_site_names]
+            num_sites = len(active_targets)
+            weight_per_site = 100 / num_sites
+
+            import io as _io, contextlib
+            log_buf = _io.StringIO()
 
             try:
                 for site_idx, (site_name, site_url) in enumerate(active_targets):
-                    status_box.markdown(f"🌐 **{site_name}** 메인 페이지 접속 중...")
-                    
-                    raw_arts = fetch_latest_tech_news(site_name, site_url, max_results=tech_max_results)
+                    status_box.markdown(f"🌐 **{html.escape(site_name)}** 메인 페이지 접속 중...")
+
+                    with contextlib.redirect_stdout(log_buf):
+                        raw_arts = fetch_latest_tech_news(site_name, site_url, max_results=tech_max_results, debug=tech_debug)
                     total = len(raw_arts)
-                    
-                    for i, art in enumerate(raw_arts):
-                        if art["link"]:
-                            content, high_res_img = fetch_article_content(art["link"])
-                            art["content"] = content
-                            if high_res_img: art["img_url"] = high_res_img
-                            art["keywords"] = extract_keywords(content)
-                        
-                        collected.append(art)
-                        
-                        # 사이트 개수에 맞춰 진행률 바를 동적으로 할당
-                        weight_per_site = 100 / len(active_targets)
-                        current_overall_progress = int((site_idx * weight_per_site) + (((i + 1) / total) * weight_per_site))
-                        prog_bar.progress(current_overall_progress)
-                        status_box.markdown(f"📄 **{site_name}** 기사 수집 중 **{i+1}/{total}** — {art.get('title','')[:30]}...")
+
+                    if total == 0:
+                        # 빈 사이트라도 진행률은 전진
+                        prog_bar.progress(int((site_idx + 1) * weight_per_site))
+                        status_box.markdown(f"⚠️ **{html.escape(site_name)}** 기사 없음 — 다음 사이트로 진행")
+                        continue
+
+                    def on_progress(done, total_, art, _site_idx=site_idx, _site_name=site_name):
+                        progress = int((_site_idx * weight_per_site) + ((done / total_) * weight_per_site))
+                        prog_bar.progress(min(progress, 100))
+                        title_preview = html.escape((art.get("title", "") if art else "")[:30])
+                        status_box.markdown(f"📄 **{html.escape(_site_name)}** 기사 수집 중 **{done}/{total_}** — {title_preview}...")
+
+                    enrich_articles_parallel(raw_arts, progress_cb=on_progress)
+                    collected.extend(raw_arts)
 
                 st.session_state.articles_tech = collected
+                st.session_state.debug_log = log_buf.getvalue()
                 status_box.empty(); prog_bar.empty()
-                st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+                if collected:
+                    st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+                else:
+                    st.warning("⚠️ 수집된 기사가 0건입니다. 디버그 체크박스를 켜고 다시 시도해 원인을 확인해보세요.")
 
             except Exception as e:
+                st.session_state.debug_log = log_buf.getvalue()
                 status_box.empty(); prog_bar.empty()
                 st.error(f"❌ 수집 중 오류 발생: {e}")
 
     # 결과 출력 (mode="tech"를 넘겨주면 탭이 자동으로 나뉨)
     if st.session_state.articles_tech:
         render_results(st.session_state.articles_tech, "선택 사이트 최신 기사", "tech", mode="tech")
+        if tech_debug: _show_debug()
+    elif tech_debug and st.session_state.debug_log:
+        _show_debug()
     else:
         st.markdown("""<div style="margin-top:4rem;text-align:center;color:var(--text-3);">
             <div style="font-size:3rem;margin-bottom:1rem;">🤖</div>
