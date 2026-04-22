@@ -10,6 +10,18 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, urljoin, urlparse
 from collections import Counter
 
+# ── HTML 파서 선택 ──────────────────────────────────────
+# lxml이 설치돼 있으면 속도를 위해 사용, 아니면 표준 html.parser로 fallback.
+try:
+    import lxml  # noqa: F401
+    _HTML_PARSER = "lxml"
+except ImportError:
+    _HTML_PARSER = "html.parser"
+
+
+def _soup(markup: str) -> BeautifulSoup:
+    return BeautifulSoup(markup, _HTML_PARSER)
+
 # ── User-Agent 풀 ──────────────────────────────────────────
 UA_POOL = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -148,7 +160,7 @@ def search_naver_news(keyword: str, max_results: int = 10, debug: bool = False) 
     except requests.RequestException as e:
         raise RuntimeError(f"네이버 검색 요청 실패: {e}")
 
-    soup = BeautifulSoup(resp.text, "lxml")
+    soup = _soup(resp.text)
     items = _find_news_items(soup, debug=debug)
     if debug:
         print(f"[search_naver_news] 후보 아이템 {len(items)}건, max_results={max_results}")
@@ -282,7 +294,7 @@ def fetch_latest_tech_news(site_name: str, site_url: str, max_results: int = 10,
             if debug:
                 print(f"[{site_name}] HTTP {resp.status_code} 수신 — 파싱 계속 시도")
 
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = _soup(resp.text)
         all_anchors = soup.find_all("a", href=True)
         if debug:
             print(f"[{site_name}] 전체 앵커 {len(all_anchors)}개 스캔")
@@ -368,7 +380,7 @@ def fetch_article_content(url: str) -> tuple:
         if resp.encoding is None or resp.encoding.lower() == 'iso-8859-1':
             resp.encoding = resp.apparent_encoding
 
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = _soup(resp.text)
 
         og_img = soup.find("meta", property="og:image")
         high_res_img = og_img["content"] if og_img and og_img.get("content") else ""
