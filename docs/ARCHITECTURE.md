@@ -36,19 +36,23 @@
 - `articles_to_dataframe(articles) -> pd.DataFrame`
 - `extract_keywords(text, top_n) -> str`
 
-**공통 article dict 스키마:**
+**공통 article dict 스키마** (scraper 가 실제로 사용하는 키):
 ```python
 {
-    "title": str,          # HTML escape 완료
-    "url": str,            # 정규화된 절대 URL
-    "press": str,          # 언론사/사이트명
-    "date": str,           # "YYYY-MM-DD" 또는 ""
-    "thumbnail": str,      # 이미지 URL (없으면 "")
+    "title":   str,        # HTML escape 완료
+    "link":    str,        # 정규화된 절대 URL (주의: 'url' 아님)
+    "press":   str,        # 언론사/사이트명
+    "date":    str,        # "YYYY-MM-DD" 또는 "" (사이트 모드는 "최신 동향")
+    "img_url": str,        # 이미지 URL (없으면 "") (주의: 'thumbnail' 아님)
     "summary": str,        # 리스트 페이지의 요약
     "content": str,        # enrich 후 채워짐, 없으면 ""
     "keywords": str,       # extract_keywords 결과, comma-separated
 }
 ```
+
+> ⚠️ `articles_to_dataframe()` 는 export 용으로 컬럼을 한국어로 rename 한다
+> (`title→제목`, `link→링크`, `img_url→이미지URL` 등).
+> **집계·분석은 rename 전 dict 리스트**로 해야 한다 — `insights.*` 함수는 list[dict] 를 받는다.
 
 **내부 규약:**
 - 모든 HTTP는 `_build_session()`을 통해. 직접 `requests.get` 금지.
@@ -58,13 +62,14 @@
 ### insights.py — 집계 계층
 
 **공개 함수:**
-- `by_press(df) -> pd.DataFrame` — 언론사별 기사 수·키워드 상위.
-- `by_keyword(df, top_n) -> pd.DataFrame` — 전체 키워드 빈도.
-- `trend_by_date(df) -> pd.DataFrame` — 일자별 기사 수.
-- `related_articles(df, keyword) -> pd.DataFrame` — 키워드 필터링.
+- `by_press(articles) -> pd.DataFrame` — 언론사별 기사 수. 컬럼: `press, count`.
+- `by_keyword(articles, top_n) -> pd.DataFrame` — 키워드 빈도. 컬럼: `keyword, count`.
+- `trend_by_date(articles) -> pd.DataFrame` — 일자별 기사 수. 컬럼: `date, count`.
+- `related_articles(articles, keyword) -> list[dict]` — 키워드 필터링 (입력과 동일 형태).
 
-**입력:** `articles_to_dataframe`의 결과 DataFrame.
-**출력:** 항상 `pd.DataFrame` (Streamlit에서 `st.dataframe`/`st.bar_chart`로 바로 렌더).
+**입력:** `list[dict]` — scraper 가 반환하는 rename 전 article 리스트.
+**출력:** 집계 결과는 `pd.DataFrame` (Streamlit `st.dataframe`/`st.bar_chart` 로 바로 렌더).
+`related_articles` 만 list[dict] (다시 카드/테이블 렌더링에 넘기기 위함).
 
 ### cardnews.py — 렌더 계층
 

@@ -9,6 +9,8 @@ from scraper import (
     enrich_articles_parallel,
     articles_to_dataframe,
 )
+import insights
+import cardnews
 
 
 def _safe_filename(text: str, fallback: str = "news") -> str:
@@ -110,7 +112,12 @@ with st.sidebar:
     st.markdown("## ⚙️ 메뉴 선택")
     app_mode = st.radio(
         "작업할 기능을 선택하세요.",
-        ["🔍 네이버 뉴스 검색", "🚀 최신 기술 동향 (AI/자동화)"],
+        [
+            "🔍 네이버 뉴스 검색",
+            "🚀 최신 기술 동향 (AI/자동화)",
+            "📊 인사이트 보드",
+            "🎨 카드뉴스",
+        ],
         label_visibility="collapsed"
     )
     st.markdown("---")
@@ -442,3 +449,50 @@ elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
             <div style="font-size:3rem;margin-bottom:1rem;">🤖</div>
             <div>원하는 사이트를 선택하고 [최신 기사 일괄 수집하기] 버튼을 눌러 트렌드를 파악해보세요.</div>
         </div>""", unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+# 화면 3: 인사이트 보드 (스켈레톤)
+# ─────────────────────────────────────────────
+elif app_mode == "📊 인사이트 보드":
+    st.markdown("""
+    <div class="header-wrap">
+        <span class="header-logo">📊 인사이트 보드</span>
+        <span class="header-sub">수집 기사 집계 · 트렌드 · 언론사 랭킹</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
+    if not pool:
+        st.info("먼저 [네이버 뉴스 검색] 또는 [최신 기술 동향] 탭에서 기사를 수집하세요.")
+    else:
+        st.caption(f"분석 대상: 총 **{len(pool)}건**")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("언론사별 기사 수")
+            st.bar_chart(insights.by_press(pool), x="press", y="count", use_container_width=True)
+        with c2:
+            st.subheader("키워드 빈도 Top 20")
+            st.bar_chart(insights.by_keyword(pool, top_n=20), x="keyword", y="count", use_container_width=True)
+        st.subheader("일자별 기사 수")
+        st.bar_chart(insights.trend_by_date(pool), x="date", y="count", use_container_width=True)
+
+# ─────────────────────────────────────────────
+# 화면 4: 카드뉴스 (스켈레톤)
+# ─────────────────────────────────────────────
+elif app_mode == "🎨 카드뉴스":
+    st.markdown("""
+    <div class="header-wrap">
+        <span class="header-logo">🎨 카드뉴스</span>
+        <span class="header-sub">기사를 카드형 HTML/이미지로 렌더</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
+    if not pool:
+        st.info("먼저 [네이버 뉴스 검색] 또는 [최신 기술 동향] 탭에서 기사를 수집하세요.")
+    else:
+        titles = [f"{i+1}. {html.escape(a.get('title',''))}" for i, a in enumerate(pool)]
+        idx = st.selectbox("카드로 렌더할 기사 선택", range(len(pool)), format_func=lambda i: titles[i])
+        template = st.selectbox("템플릿", cardnews.available_templates())
+        st.markdown(cardnews.render_html(pool[idx], template=template), unsafe_allow_html=True)
+        st.caption("※ PNG export 는 차기 세션에서 Pillow 연동 예정.")

@@ -84,6 +84,29 @@ if st.button("액션", key="sc_btn_search"):
 ## I-11 — DataFrame 컬럼 고정
 
 `articles_to_dataframe`이 반환하는 컬럼 순서는 CSV/엑셀 export 스키마와 동일해야 한다. 컬럼 추가 시:
+
 1. `scraper.articles_to_dataframe` 수정
 2. `app.py`의 `_table_column_config` 동기화
 3. `CHANGELOG.md`에 schema change 명시
+
+## I-12 — 레거시 예외 (마이그레이션 전까지 유지)
+
+아래는 현행 코드에 남아 있는 규칙 위반이지만, **개별 브랜치에서 이관하기 전에는 건드리지 않는다** (한 번에 대규모 리팩터링 금지).
+
+### L-1. `app.py` 세션 키 prefix 미적용
+현행:
+```
+articles_naver, articles_tech, keyword_naver, debug_log
+```
+I-9 요구: `sc_*` prefix. → **신규 state 키는 반드시 prefix 적용.** 기존 4개는 `refactor-session-keys` 브랜치에서 일괄 rename 예정.
+
+### L-2. `app.py` 내 `render_cards_html`, `render_results` 함수
+I-4(`app.py`는 평탄 스크립트, 마크업 헬퍼 금지) 위반. 하지만 스크래퍼 탭의 카드/테이블 렌더가 이 두 함수에 의존. → **`feat-cardnews-migrate` 브랜치에서 `cardnews.render_html`/`cardnews.render_deck` 로 이관 예정.** 이관 전에는 두 함수를 그대로 호출해도 된다. **단, 새 render_* 함수 추가는 금지.**
+
+### L-3. CSS 인라인 vs `assets/styles.css` 이중화
+현행 `app.py` 상단 `st.markdown("<style>...")` 블록이 아직 살아 있다. `assets/styles.css` 는 `.cn-*` / `.ins-*` 신규 네임스페이스만 담당. → **CSS 수정 작업은 라우팅 표의 "CSS만 수정" 항목을 참조하되, 기존 `.news-*` / `.card-*` 토큰은 app.py 상단에서 고친다.** 전체 이관은 `refactor-css-extract` 브랜치.
+
+### 검증에서 예외 처리
+
+커밋 전 체크의 `grep -nE '^def render_' app.py` 는 현재 2건이 정상. 새로 추가되면 안 되므로 **증가 여부**만 감시한다.
+

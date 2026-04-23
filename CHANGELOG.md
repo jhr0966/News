@@ -5,7 +5,15 @@
 
 ## [Unreleased]
 
+### Changed
+- `insights.py` 입력을 `list[dict]` (rename 전 article) 로 변경 — `articles_to_dataframe` 의 한국어 컬럼 DataFrame 과 혼동 방지.
+- `docs/ARCHITECTURE.md` article 스키마를 실제 키 (`link`, `img_url`) 로 정정.
+- `app.py` 사이드바 라디오에 **📊 인사이트 보드**, **🎨 카드뉴스** 모드 추가 — 스크래퍼가 모은 기사를 공유 pool 로 집계·렌더.
+- `requirements.txt`: `streamlit>=1.32`, `Pillow` 추가.
+
 ### Added
+- `README.md` — 실행·문서 라우팅·검증 명령 요약.
+- `docs/INVARIANTS.md` **I-12 레거시 예외** 섹션 — 기존 세션 키 (`articles_naver` 등)와 `render_*` 2개는 별도 브랜치 마이그레이션 전까지 예외.
 - `CLAUDE.md` 상시 작업 규칙 문서 신규.
 - `DEV_GUIDELINES.md`를 News 3대 도메인(스크래핑·인사이트·카드뉴스) 버전으로 재작성.
 - `docs/ARCHITECTURE.md` — 모듈 경계·데이터 플로우·세션 키 prefix.

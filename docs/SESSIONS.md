@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-04-23 · 바이브코딩 Readiness 개선
+
+**브랜치:** `claude/organize-dev-guidelines-4VTac`
+**카테고리:** `docs` + `feat`
+**상태:** in-progress (같은 브랜치 push)
+
+**한 일 (5건 · 1커밋):**
+1. `insights.py` 시그니처를 `list[dict]` 로 변경 — `articles_to_dataframe` 한국어 컬럼 DataFrame 과 혼동 제거.
+2. `docs/ARCHITECTURE.md` article 스키마 실제 키 (`link`, `img_url`) 로 정정.
+3. `docs/INVARIANTS.md` **I-12 레거시 예외** 추가 — 기존 세션 키·`render_*` 2개는 별도 브랜치 이관 전까지 예외.
+4. `app.py` 사이드바에 **인사이트 보드 / 카드뉴스** 모드 실제 동작 스켈레톤 추가 (스크래퍼 pool 공유).
+5. `README.md` 추가 (실행·문서 라우팅·검증 명령).
+
+**직전 검토에서 Blocker 였던 항목:** 모두 해소 ✅
+
+**다음 세션이 할 일 (제안):**
+- `refactor-session-keys`: `articles_naver/articles_tech/keyword_naver/debug_log` → `sc_*` prefix 일괄 rename.
+- `feat-cardnews-migrate`: `render_cards_html`/`render_results` → `cardnews.render_html`/`render_deck` 로 이관, I-4 준수.
+- `feat-cardnews-png`: `cardnews.render_png` + Streamlit `st.download_button` 으로 PNG export.
+- `refactor-css-extract`: `app.py` 인라인 `<style>` → `assets/styles.css` 로 이관.
+
+**블로커:** 없음.
+
+---
+
 ## 2026-04-22 · 개발 가이드라인 셋업
 
 **브랜치:** `claude/organize-dev-guidelines-4VTac`
