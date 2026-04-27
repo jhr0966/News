@@ -56,9 +56,15 @@ def by_keyword(articles: list[dict], top_n: int = 30) -> pd.DataFrame:
 def trend_by_date(articles: list[dict]) -> pd.DataFrame:
     """일자별 기사 수. 컬럼: date, count. (date 파싱 실패는 제외)"""
     df = _as_df(articles)
-    if df.empty or "date" not in df.columns:
+    if df.empty:
         return pd.DataFrame(columns=["date", "count"])
-    dates = pd.to_datetime(df["date"], errors="coerce").dt.date.dropna()
+    if "published_at" in df.columns:
+        published = pd.to_datetime(df["published_at"], errors="coerce", utc=True)
+    elif "date" in df.columns:
+        published = pd.to_datetime(df["date"], errors="coerce", utc=True)
+    else:
+        return pd.DataFrame(columns=["date", "count"])
+    dates = published.dt.date.dropna()
     if dates.empty:
         return pd.DataFrame(columns=["date", "count"])
     out = dates.value_counts().sort_index().reset_index()

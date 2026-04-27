@@ -43,6 +43,7 @@
     "link":    str,        # 정규화된 절대 URL (주의: 'url' 아님)
     "press":   str,        # 언론사/사이트명
     "date":    str,        # "YYYY-MM-DD" 또는 "" (사이트 모드는 "최신 동향")
+    "published_at": str,   # ISO8601 UTC (예: 2026-04-27T10:30:00+00:00)
     "img_url": str,        # 이미지 URL (없으면 "") (주의: 'thumbnail' 아님)
     "summary": str,        # 리스트 페이지의 요약
     "content": str,        # enrich 후 채워짐, 없으면 ""

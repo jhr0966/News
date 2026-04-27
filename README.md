@@ -16,6 +16,25 @@ streamlit run app.py
 - Python ≥ 3.10
 - 최초 실행 시 `lxml` 설치 실패 시 `html.parser` 로 자동 fallback (`scraper._pick_parser`).
 
+
+## 빠른 개발 환경 세팅 (Streamlit)
+
+```bash
+./scripts/dev_setup.sh
+source .venv/bin/activate
+make run
+```
+
+또는 수동 설치:
+
+```bash
+make install
+make run
+```
+
+- Streamlit 설정: `.streamlit/config.toml`
+- 개발 운영 청사진: `docs/VIBE_CODING_BLUEPRINT.md`
+
 ## 개발 문서
 
 | 문서 | 언제 읽나 |
@@ -27,6 +46,7 @@ streamlit run app.py
 | [`docs/WORKFLOW.md`](./docs/WORKFLOW.md) | 브랜치 → 커밋 → 머지 루프 |
 | [`docs/SESSIONS.md`](./docs/SESSIONS.md) | 이전 세션 복원 (상단 1개만) |
 | [`CHANGELOG.md`](./CHANGELOG.md) | 릴리스 이력 |
+| [`docs/VIBE_CODING_BLUEPRINT.md`](./docs/VIBE_CODING_BLUEPRINT.md) | 제품/아키텍처/개발전략 청사진 |
 
 ## 배포
 
@@ -43,4 +63,19 @@ git checkout -b <category>-<slug>    # fix|feat|refactor|style|docs|chore
 python -m py_compile app.py scraper.py insights.py cardnews.py
 grep -nE 'on_click\s*=' app.py                                # 0
 grep -nE 'requests\.(get|post|Session)\(' scraper.py          # _build_session 내부 1건만
+```
+
+## 페이지 스모크 테스트
+
+지금까지 개발된 4개 페이지(네이버 검색/최신 기술 동향/인사이트 보드/카드뉴스)가
+최소 렌더링에서 크래시 없이 뜨는지 자동으로 검사할 수 있습니다.
+
+```bash
+make test
+```
+
+개별 실행:
+
+```bash
+pytest -q tests/test_app_pages_smoke.py
 ```
