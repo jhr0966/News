@@ -5,6 +5,23 @@
 
 ## [Unreleased]
 
+### Added
+- `tests/test_app_pages_smoke.py` 추가 — Streamlit 4개 페이지의 기본 렌더링 스모크 테스트 자동화.
+- `Makefile`에 `test` 타깃 추가 (`pytest -q tests/test_app_pages_smoke.py`).
+- `requirements.txt`에 `pytest` 추가.
+- `README.md`에 페이지 스모크 테스트 실행 가이드 추가.
+- `.streamlit/config.toml` 추가 — Streamlit 테마/서버 실행 기본값 표준화.
+- `scripts/dev_setup.sh` 추가 — 가상환경 생성·의존성 설치 원클릭 세팅 스크립트.
+- `Makefile` 추가 — `install/run/check/format/clean` 개발 명령 표준화.
+- `docs/VIBE_CODING_BLUEPRINT.md` 추가 — 뉴스+조선소 자동화 과제 시스템의 전략/아키텍처/로드맵 정의.
+
+### Changed
+- `README.md`에 Streamlit 개발환경 빠른 시작 절차와 blueprint 문서 링크를 추가.
+- `scraper.py`에 `published_at`(UTC ISO8601) 정규화 로직을 추가해 상대시간(예: N분 전/시간 전/일 전)을 절대시각으로 저장하도록 개선.
+- `insights.trend_by_date`가 `published_at` 우선 집계를 사용하도록 변경해 날짜 트렌드 정확도를 개선.
+- `app.py` 테이블 컬럼 설정에 `발행시각(UTC)` 표시를 추가.
+- `docs/ARCHITECTURE.md` article 스키마에 `published_at` 필드를 명시.
+
 ### Changed
 - `insights.py` 입력을 `list[dict]` (rename 전 article) 로 변경 — `articles_to_dataframe` 의 한국어 컬럼 DataFrame 과 혼동 방지.
 - `docs/ARCHITECTURE.md` article 스키마를 실제 키 (`link`, `img_url`) 로 정정.
@@ -37,6 +54,15 @@
 
 ```md
 ## [Unreleased]
+
+### Added
+- `.streamlit/config.toml` 추가 — Streamlit 테마/서버 실행 기본값 표준화.
+- `scripts/dev_setup.sh` 추가 — 가상환경 생성·의존성 설치 원클릭 세팅 스크립트.
+- `Makefile` 추가 — `install/run/check/format/clean` 개발 명령 표준화.
+- `docs/VIBE_CODING_BLUEPRINT.md` 추가 — 뉴스+조선소 자동화 과제 시스템의 전략/아키텍처/로드맵 정의.
+
+### Changed
+- `README.md`에 Streamlit 개발환경 빠른 시작 절차와 blueprint 문서 링크를 추가.
 
 ### Added
 - ...

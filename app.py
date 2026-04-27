@@ -200,6 +200,7 @@ def _table_column_config():
         "링크": st.column_config.LinkColumn("링크", display_text="열기"),
         "이미지URL": st.column_config.LinkColumn("이미지URL", display_text="보기"),
         "제목": st.column_config.TextColumn("제목", width="medium"),
+        "발행시각(UTC)": st.column_config.TextColumn("발행시각(UTC)", width="small"),
         "본문내용": st.column_config.TextColumn("본문내용", width="large"),
         "추출키워드": st.column_config.TextColumn("추출키워드", width="medium"),
     }

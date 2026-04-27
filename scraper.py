@@ -3,6 +3,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup
 import pandas as pd
+from datetime import datetime, timedelta, timezone
 import time
 import random
 import re
@@ -53,6 +54,48 @@ def _headers():
         "Sec-Ch-Ua-Platform": '"Windows"',
         "Upgrade-Insecure-Requests": "1"
     }
+
+
+def normalize_published_at(date_text: str, now_utc: datetime | None = None) -> str:
+    """다양한 기사 날짜 텍스트를 UTC ISO8601 문자열로 정규화.
+
+    지원 예:
+    - '3분 전', '2시간 전', '1일 전'
+    - '2026.04.27.' / '2026-04-27'
+    - 파싱 실패 시 빈 문자열 반환
+    """
+    if not date_text:
+        return ""
+
+    now = now_utc or datetime.now(timezone.utc)
+    text = date_text.strip()
+
+    # 상대시간 처리
+    m = re.search(r"(\d+)\s*분\s*전", text)
+    if m:
+        dt = now - timedelta(minutes=int(m.group(1)))
+        return dt.replace(microsecond=0).isoformat()
+
+    m = re.search(r"(\d+)\s*시간\s*전", text)
+    if m:
+        dt = now - timedelta(hours=int(m.group(1)))
+        return dt.replace(microsecond=0).isoformat()
+
+    m = re.search(r"(\d+)\s*일\s*전", text)
+    if m:
+        dt = now - timedelta(days=int(m.group(1)))
+        return dt.replace(microsecond=0).isoformat()
+
+    # 절대일 처리
+    cleaned = text.replace(".", "-").strip("- ")
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            parsed = datetime.strptime(cleaned, fmt)
+            parsed_utc = parsed.replace(tzinfo=timezone.utc)
+            return parsed_utc.replace(microsecond=0).isoformat()
+        except ValueError:
+            continue
+    return ""
 
 
 def _build_session() -> requests.Session:
@@ -229,6 +272,7 @@ def search_naver_news(keyword: str, max_results: int = 10, debug: bool = False) 
                 "title":   title,
                 "press":   press,
                 "date":    date_str,
+                "published_at": normalize_published_at(date_str),
                 "link":    best_link,
                 "summary": summary,
                 "content": "",
@@ -344,6 +388,7 @@ def fetch_latest_tech_news(site_name: str, site_url: str, max_results: int = 10,
                 "title": title,
                 "press": site_name,
                 "date": "최신 동향",
+                "published_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
                 "link": full_link,
                 "summary": "",
                 "content": "",
@@ -470,7 +515,8 @@ def articles_to_dataframe(articles: list[dict]) -> pd.DataFrame:
     df = pd.DataFrame(articles)
     col_map = {
         "title":   "제목", "press":   "언론사", "date":    "발행일시",
-        "link":    "링크", "keywords": "추출키워드", "summary": "요약", "content": "본문내용", "img_url": "이미지URL"
+        "published_at": "발행시각(UTC)", "link": "링크",
+        "keywords": "추출키워드", "summary": "요약", "content": "본문내용", "img_url": "이미지URL"
     }
     existing = [c for c in col_map if c in df.columns]
     df = df[existing].rename(columns={c: col_map[c] for c in existing})

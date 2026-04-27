@@ -5,6 +5,72 @@
 
 ---
 
+## 2026-04-27 · 페이지 테스트 가능 상태로 개선 (스모크 테스트 추가)
+
+**브랜치:** `work`
+**카테고리:** `test` + `docs`
+**상태:** in-progress
+
+**한 일:**
+1. `tests/test_app_pages_smoke.py` 추가 — Streamlit 4개 모드 기본 렌더링 스모크 테스트 구현.
+2. `Makefile`에 `test` 타깃 추가 (`pytest -q tests/test_app_pages_smoke.py`).
+3. `requirements.txt`에 `pytest` 추가.
+4. `README.md`에 테스트 실행 방법 추가.
+5. `CHANGELOG.md` 업데이트.
+
+**다음 세션 TODO:**
+- 네트워크 의존 구간(mock) 분리해 더 안정적인 단위테스트 추가
+- 카드뉴스 렌더 결과 스냅샷 테스트 도입
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-27 · Foundation 리팩토링 (published_at 정규화)
+
+**브랜치:** `work`
+**카테고리:** `refactor`
+**상태:** in-progress
+
+**한 일:**
+1. `scraper.py`에 `normalize_published_at()` 추가, 네이버/포탈 수집 결과에 `published_at` 저장.
+2. `insights.py` `trend_by_date()`가 `published_at` 우선 사용하도록 개선.
+3. `app.py` 결과 테이블에 `발행시각(UTC)` 컬럼 표시 추가.
+4. `docs/ARCHITECTURE.md` article 스키마에 `published_at` 필드 반영.
+5. `CHANGELOG.md` 업데이트.
+
+**다음 세션 TODO:**
+- 수집 결과를 parquet/db로 저장하는 repository 계층 추가
+- 작업 데이터(엑셀) 업로드 및 parquet 변환 파이프라인 추가
+- 작업-뉴스 매칭 PoC 구현
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-27 · Streamlit 바이브코딩 운영 청사진/환경 셋업
+
+**브랜치:** `work`
+**카테고리:** `docs` + `chore`
+**상태:** in-progress
+
+**한 일:**
+1. `.streamlit/config.toml` 생성 (테마/서버 기본값).
+2. `scripts/dev_setup.sh` 생성 (venv + requirements 설치 자동화).
+3. `Makefile` 생성 (`install`, `run`, `check`, `format`, `clean`).
+4. `docs/VIBE_CODING_BLUEPRINT.md` 작성 (전략/아키텍처/로드맵/운영규칙).
+5. `README.md`에 빠른 시작 절차 및 blueprint 링크 추가.
+6. `CHANGELOG.md` [Unreleased] 업데이트.
+
+**다음 세션 TODO:**
+- DB 스키마 초안(`articles`, `tasks`, `embeddings`, `proposals`) 구체화
+- 워드클라우드 + 시간대 트렌드 차트 구현
+- 작업-뉴스 매칭 점수 함수 PoC 구현
+
+**블로커:** 없음.
+
+---
+
 ## 2026-04-23 · 바이브코딩 Readiness 개선
 
 **브랜치:** `claude/organize-dev-guidelines-4VTac`
