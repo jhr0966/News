@@ -5,6 +5,199 @@
 
 ---
 
+## 2026-04-28 · Phase A 완료 정리 (MVP 완료)
+
+**브랜치:** `work`
+**카테고리:** `feat` + `docs`
+**상태:** in-progress
+
+**한 일:**
+1. 카드뉴스 후보 관리 고도화(다중 삭제, 썸네일/발행일 표시).
+2. 제안 히스토리 JSON에서 카드뉴스 후보 일괄 불러오기 기능 추가.
+3. 제안 추천 데이터에 `img_url/date/published_at` 전달 필드 보강.
+4. `docs/DEVELOPMENT_PHASES.md`에 Phase A 완료 상태를 명시.
+
+**다음 세션 TODO (Phase B 시작):**
+- 배치 스케줄링/재시도/실패로그 표준화
+- 데이터 품질 지표(중복률/누락률) 대시보드
+- 운영 관측성(수집 성공률/처리시간) 추가
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 8 (카드뉴스 후보 관리 UI)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. 카드뉴스 화면에 `카드뉴스 후보 관리` UI(목록/선택 삭제/전체 초기화) 추가.
+2. 제안 연동 후보(`cardnews_candidates`)를 사용자 제어로 정리할 수 있게 개선.
+3. 후보 목록을 테이블로 노출해 카드 제작 전 큐를 점검 가능하게 함.
+
+**다음 세션 TODO:**
+- 카드뉴스 후보에 썸네일/발행일 컬럼 추가
+- 후보 선택 다중 삭제 지원
+- 제안 히스토리에서 카드 후보 일괄 불러오기
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 7 (제안 → 카드뉴스 연동)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. 제안 화면에서 추천 기사별 `카드뉴스 후보로 추가` 액션 추가.
+2. 세션 상태(`cardnews_candidates`)에 중복 제거하며 후보 적재.
+3. 카드뉴스 화면이 제안 연동 후보 + 수집 기사 풀을 합쳐 렌더하도록 확장.
+4. 카드뉴스 화면에 제안 연동 후보 건수 캡션 표시.
+
+**다음 세션 TODO:**
+- 카드뉴스 후보 목록 관리(삭제/초기화) UI 추가
+- 제안 히스토리 상세 화면에서 카드 생성 바로가기 추가
+- 추천 기사에 썸네일/발행일 보강
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 6 (최신성/출처 신뢰도 반영 + 이력 조회)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `proposal_engine.py` 추천 점수에 최신성(`freshness_score`)과 출처 신뢰도(`source_score`) 반영.
+2. 최종 기사 점수(`score`)를 relevance + freshness + source 가중합으로 계산.
+3. `proposal_engine.py`에 최근 제안 아티팩트 목록 함수(`list_recent_proposal_artifacts`) 추가.
+4. `app.py` 제안 화면 상세에 점수 분해(rel/fresh/src) 표시 및 최근 아티팩트 이력 테이블 추가.
+5. `tests/test_proposal_engine.py`를 점수/이력 시나리오까지 확장.
+
+**다음 세션 TODO:**
+- 카드뉴스에서 제안 추천 기사 바로 선택 기능
+- 제안 히스토리 상세 뷰(파일 열기/재사용) 추가
+- 매칭 점수 설명 tooltip 개선
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 5 (우선순위 가중치 + 제안서 템플릿 분리)
+
+**브랜치:** `main`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `proposal_engine.py`에 작업 우선순위 점수(`priority_score`) 로직 추가(효과/위험/난이도 가중치).
+2. 제안서 Markdown 템플릿을 `executive` / `execution` 2종으로 분리.
+3. 제안 아티팩트 저장 시 JSON + 템플릿별 MD 2개를 함께 저장하도록 확장.
+4. `app.py` 제안 화면에 우선순위 점수 컬럼/템플릿 선택 다운로드 UI 반영.
+5. `tests/test_proposal_engine.py` 검증 시나리오 업데이트.
+
+**다음 세션 TODO:**
+- 카드뉴스 화면에서 제안서 추천 기사 바로 가져오기
+- 추천 스코어에 기사 최신성/출처 신뢰도 반영
+- 제안 결과 히스토리 조회(로컬 파일 목록) UI 추가
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 4 (제안서 아티팩트 저장/다운로드)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `proposal_engine.py`에 `proposals_to_markdown`, `save_proposals_artifacts` 추가.
+2. `app.py` 제안 화면에서 생성 결과를 세션에 보관하고 JSON/Markdown 다운로드 제공.
+3. 생성 결과를 `data/artifacts/proposals/YYYY-MM-DD/`에 JSON/MD로 저장하고 경로 표시.
+4. `tests/test_proposal_engine.py`에 아티팩트 저장/마크다운 렌더 검증 추가.
+
+**다음 세션 TODO:**
+- 추천 점수에 작업 난이도/효과 가중치 추가
+- 제안서 템플릿(경영진 요약/현장 실행안) 2종으로 분리
+- 카드뉴스 화면과 제안 화면 데이터 연동
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 3 (작업-뉴스 매칭 제안 화면)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `proposal_engine.py` 추가 — 작업-뉴스 토큰 중첩 기반 스코어링/추천(`suggest_for_tasks`) 구현.
+2. `shipyard_store.py`에 최신 작업 Parquet 로더(`load_latest_shipyard_tasks`) 추가.
+3. `app.py`에 신규 모드 `🤝 자동화 과제 제안` 추가(요약표 + 작업별 추천 상세).
+4. `tests/test_proposal_engine.py` 추가 및 `tests/test_app_pages_smoke.py` 신규 메뉴 옵션 반영.
+5. `README.md`, `CHANGELOG.md` 업데이트.
+
+**다음 세션 TODO:**
+- 제안 결과를 파일(JSON/MD)로 저장하는 export 기능 추가
+- 추천 스코어에 비용/난이도/효과 가중치 반영
+- 카드뉴스와 제안서 연결(선택 기사로 카드 자동 생성)
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 2 (조선소 작업 데이터 업로드 파이프라인)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `shipyard_store.py` 추가 — Excel 업로드 raw 저장, 필수 컬럼 검증, Parquet 저장 파이프라인 구현.
+2. `app.py`에 신규 모드 `🏭 조선소 작업 데이터` 추가 및 업로드 UI/검증 결과 표시 연결.
+3. `tests/test_shipyard_store.py` 추가 — 성공/필수 컬럼 누락 케이스 검증.
+4. `tests/test_app_pages_smoke.py`에 신규 메뉴 옵션 검증 추가.
+5. 엑셀 엔진 미설치(openpyxl) 환경에서도 사용자 안내 에러를 반환하도록 처리.
+
+**다음 세션 TODO:**
+- 업로드된 조선소 데이터 미리보기/필터링 UI 추가
+- 뉴스-작업 매칭 스코어링 함수(룰 기반) 1차 구현
+- 제안서 생성 템플릿과 근거 링크 연결
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 착수 (Local First 저장소 시작)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `local_store.py` 추가 — 뉴스 수집 결과를 `jsonl + parquet`로 저장하는 로컬 저장소 유틸 구현.
+2. `app.py` 시작 시 `naver`/`tech` 최신 로컬 배치를 자동 로드하도록 연결.
+3. `app.py`에서 뉴스 수집 성공 시 자동 로컬 저장 + 저장 경로 캡션 노출.
+4. `CHANGELOG.md` 업데이트.
+5. `NewsRepository`/`LocalNewsRepository` 추상화 도입으로 저장소 스위치 준비.
+6. `tests/test_local_store.py` 추가로 Local 저장/복구 동작 검증.
+
+**다음 세션 TODO:**
+- Shipyard Excel 업로드/검증/Parquet 저장 파이프라인 1차 구현
+- `data/` 경로/스키마 검증 테스트 추가
+
+**블로커:** 없음.
+
+---
+
 ## 2026-04-27 · 페이지 테스트 가능 상태로 개선 (스모크 테스트 추가)
 
 **브랜치:** `work`

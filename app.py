@@ -3,6 +3,8 @@ import pandas as pd
 import io
 import re
 import html
+import json
+from pathlib import Path
 from scraper import (
     search_naver_news,
     fetch_latest_tech_news,
@@ -11,6 +13,14 @@ from scraper import (
 )
 import insights
 import cardnews
+from local_store import LocalNewsRepository
+from shipyard_store import ingest_shipyard_excel, REQUIRED_COLUMNS, load_latest_shipyard_tasks
+from proposal_engine import (
+    suggest_for_tasks,
+    proposals_to_markdown,
+    save_proposals_artifacts,
+    list_recent_proposal_artifacts,
+)
 
 
 def _safe_filename(text: str, fallback: str = "news") -> str:
@@ -101,7 +111,19 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 # ─────────────────────────────────────────────
 # 세션 상태 초기화
 # ─────────────────────────────────────────────
-for k, v in [("articles_naver", []), ("keyword_naver", ""), ("debug_log", ""), ("articles_tech", [])]:
+NEWS_REPOSITORY = LocalNewsRepository()
+bootstrap_naver = NEWS_REPOSITORY.load_latest_articles("naver")
+bootstrap_tech = NEWS_REPOSITORY.load_latest_articles("tech")
+
+for k, v in [
+    ("articles_naver", bootstrap_naver),
+    ("keyword_naver", ""),
+    ("debug_log", ""),
+    ("articles_tech", bootstrap_tech),
+    ("proposal_results", []),
+    ("proposal_artifacts", {}),
+    ("cardnews_candidates", []),
+]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -115,6 +137,8 @@ with st.sidebar:
         [
             "🔍 네이버 뉴스 검색",
             "🚀 최신 기술 동향 (AI/자동화)",
+            "🏭 조선소 작업 데이터",
+            "🤝 자동화 과제 제안",
             "📊 인사이트 보드",
             "🎨 카드뉴스",
         ],
@@ -343,8 +367,11 @@ if app_mode == "🔍 네이버 뉴스 검색":
                 enrich_articles_parallel(arts_list, progress_cb=on_progress)
 
                 st.session_state.articles_naver = arts_list
+                saved = NEWS_REPOSITORY.save_articles_batch("naver", arts_list, keyword=keyword.strip())
                 status_box.empty(); prog_bar.empty()
                 st.success(f"✅ 네이버 뉴스 **{total}건** 수집 완료!")
+                if saved:
+                    st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
         except Exception as e:
             status_box.empty(); prog_bar.empty()
             st.error(f"❌ 오류 발생: {e}")
@@ -427,10 +454,13 @@ elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
                     collected.extend(raw_arts)
 
                 st.session_state.articles_tech = collected
+                saved = NEWS_REPOSITORY.save_articles_batch("tech", collected, keyword="selected_portals")
                 st.session_state.debug_log = log_buf.getvalue()
                 status_box.empty(); prog_bar.empty()
                 if collected:
                     st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+                    if saved:
+                        st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
                 else:
                     st.warning("⚠️ 수집된 기사가 0건입니다. 디버그 체크박스를 켜고 다시 시도해 원인을 확인해보세요.")
 
@@ -478,7 +508,189 @@ elif app_mode == "📊 인사이트 보드":
         st.bar_chart(insights.trend_by_date(pool), x="date", y="count", use_container_width=True)
 
 # ─────────────────────────────────────────────
-# 화면 4: 카드뉴스 (스켈레톤)
+# 화면 4: 조선소 작업 데이터 (Phase 1)
+# ─────────────────────────────────────────────
+elif app_mode == "🏭 조선소 작업 데이터":
+    st.markdown("""
+    <div class="header-wrap">
+        <span class="header-logo">🏭 조선소 작업 데이터</span>
+        <span class="header-sub">엑셀 업로드 · 검증 · Parquet 저장</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.caption("필수 컬럼: " + ", ".join(REQUIRED_COLUMNS))
+    uploaded = st.file_uploader(
+        "작업 데이터 엑셀(.xlsx)을 업로드하세요.",
+        type=["xlsx"],
+        accept_multiple_files=False,
+    )
+
+    if uploaded is not None:
+        if st.button("업로드 처리 시작", use_container_width=True):
+            result = ingest_shipyard_excel(uploaded.name, uploaded)
+            if result.is_valid:
+                st.success(f"✅ 업로드 성공: {result.row_count}행")
+                st.caption(f"raw 저장: {result.raw_path}")
+                st.caption(f"parquet 저장: {result.parquet_path}")
+            else:
+                st.error("❌ 검증 실패")
+                for err in result.errors:
+                    st.warning(f"- {err}")
+                if result.raw_path:
+                    st.caption(f"raw 저장: {result.raw_path}")
+
+# ─────────────────────────────────────────────
+# 화면 5: 자동화 과제 제안 (Phase 1)
+# ─────────────────────────────────────────────
+elif app_mode == "🤝 자동화 과제 제안":
+    st.markdown("""
+    <div class="header-wrap">
+        <span class="header-logo">🤝 자동화 과제 제안</span>
+        <span class="header-sub">작업 데이터 × 뉴스 매칭 기반 제안</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tasks_df = load_latest_shipyard_tasks()
+    news_pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.metric("작업 데이터", f"{len(tasks_df)}건")
+    with c2:
+        st.metric("뉴스 풀", f"{len(news_pool)}건")
+
+    if tasks_df.empty:
+        st.info("먼저 [🏭 조선소 작업 데이터]에서 엑셀 업로드를 완료하세요.")
+    elif not news_pool:
+        st.info("먼저 [🔍 네이버 뉴스 검색] 또는 [🚀 최신 기술 동향]에서 뉴스를 수집하세요.")
+    else:
+        top_k = st.slider("작업별 추천 기사 수", min_value=1, max_value=5, value=3)
+        if st.button("제안 생성", use_container_width=True):
+            proposals = suggest_for_tasks(tasks_df, news_pool, top_k=top_k)
+            st.session_state.proposal_results = proposals
+            st.session_state.proposal_artifacts = save_proposals_artifacts(proposals)
+
+        proposals = st.session_state.proposal_results
+        if proposals:
+            rows = [
+                {
+                    "task_id": p["task_id"],
+                    "task_name": p["task_name"],
+                    "process": p["process"],
+                    "우선순위점수": p.get("priority_score", 0),
+                    "추천기사수": p["recommendation_count"],
+                }
+                for p in proposals
+            ]
+            st.subheader("제안 요약")
+            st.dataframe(pd.DataFrame(rows), use_container_width=True, height=320)
+
+            template_mode = st.selectbox(
+                "다운로드 템플릿",
+                ["executive", "execution"],
+                help="executive: 경영진 요약 / execution: 실행안 중심",
+            )
+            markdown_text = proposals_to_markdown(proposals, template=template_mode)
+            json_text = json.dumps(proposals, ensure_ascii=False, indent=2)
+            c1, c2 = st.columns(2)
+            with c1:
+                st.download_button(
+                    "⬇ 제안서 Markdown 다운로드",
+                    data=markdown_text.encode("utf-8"),
+                    file_name=f"automation_proposals_{template_mode}.md",
+                    mime="text/markdown",
+                )
+            with c2:
+                st.download_button(
+                    "⬇ 제안서 JSON 다운로드",
+                    data=json_text.encode("utf-8"),
+                    file_name="automation_proposals.json",
+                    mime="application/json",
+                )
+            if st.session_state.proposal_artifacts:
+                st.caption(f"artifact(json): {st.session_state.proposal_artifacts.get('json', '')}")
+                st.caption(f"artifact(md-exec): {st.session_state.proposal_artifacts.get('markdown_exec', '')}")
+                st.caption(f"artifact(md-plan): {st.session_state.proposal_artifacts.get('markdown_exec_plan', '')}")
+
+            st.subheader("작업별 상세 추천")
+            for p in proposals:
+                with st.expander(f"{p['task_id']} · {p['task_name']} ({p['process']})", expanded=False):
+                    if not p["recommendations"]:
+                        st.caption("추천 가능한 기사가 없습니다.")
+                        continue
+                    for idx, rec in enumerate(p["recommendations"], start=1):
+                        st.markdown(
+                            f"{idx}. **{html.escape(rec['title'])}** "
+                            f"(score={rec['score']}, rel={rec.get('relevance_score', 0)}, "
+                            f"fresh={rec.get('freshness_score', 0)}, src={rec.get('source_score', 0)}, "
+                            f"overlap={', '.join(rec['overlap_terms'])})"
+                        )
+                        if rec.get("link", "").startswith(("http://", "https://")):
+                            st.markdown(f"- 원문: {rec['link']}")
+                        if rec.get("summary"):
+                            st.caption(rec["summary"])
+                        add_key = f"add_card_{p['task_id']}_{idx}_{abs(hash(rec.get('link', rec.get('title', ''))))}"
+                        if st.button("➕ 카드뉴스 후보로 추가", key=add_key):
+                            candidate = {
+                                "title": rec.get("title", ""),
+                                "press": rec.get("press", ""),
+                                "summary": rec.get("summary", ""),
+                                "content": rec.get("summary", ""),
+                                "keywords": ", ".join(rec.get("overlap_terms", [])),
+                                "link": rec.get("link", ""),
+                                "date": rec.get("date", "추천"),
+                                "published_at": rec.get("published_at", ""),
+                                "img_url": rec.get("img_url", ""),
+                            }
+                            existing = st.session_state.cardnews_candidates
+                            if not any(c.get("link") == candidate.get("link") and c.get("title") == candidate.get("title") for c in existing):
+                                existing.append(candidate)
+                                st.success("카드뉴스 후보에 추가했습니다.")
+                            else:
+                                st.info("이미 카드뉴스 후보에 있습니다.")
+
+        st.subheader("최근 생성 아티팩트")
+        history = list_recent_proposal_artifacts(limit=15)
+        if history:
+            st.dataframe(pd.DataFrame(history), use_container_width=True, height=240)
+            json_hist = [h for h in history if h["name"].endswith(".json")]
+            if json_hist:
+                selected_json = st.selectbox(
+                    "카드 후보로 불러올 제안 JSON 선택",
+                    options=json_hist,
+                    format_func=lambda h: f"{h['date']} / {h['name']}",
+                    key="proposal_json_import_select",
+                )
+                if st.button("선택 JSON에서 카드후보 일괄 불러오기", use_container_width=True):
+                    path = Path(selected_json["path"])
+                    if path.exists():
+                        loaded = json.loads(path.read_text(encoding="utf-8"))
+                        added = 0
+                        for p in loaded:
+                            for rec in p.get("recommendations", []):
+                                candidate = {
+                                    "title": rec.get("title", ""),
+                                    "press": rec.get("press", ""),
+                                    "summary": rec.get("summary", ""),
+                                    "content": rec.get("summary", ""),
+                                    "keywords": ", ".join(rec.get("overlap_terms", [])),
+                                    "link": rec.get("link", ""),
+                                    "date": rec.get("date", "추천"),
+                                    "published_at": rec.get("published_at", ""),
+                                    "img_url": rec.get("img_url", ""),
+                                }
+                                existing = st.session_state.cardnews_candidates
+                                if not any(c.get("link") == candidate.get("link") and c.get("title") == candidate.get("title") for c in existing):
+                                    existing.append(candidate)
+                                    added += 1
+                        st.success(f"카드뉴스 후보 {added}건을 추가했습니다.")
+                    else:
+                        st.error("선택한 JSON 파일을 찾을 수 없습니다.")
+        else:
+            st.caption("아직 생성된 아티팩트가 없습니다.")
+
+# ─────────────────────────────────────────────
+# 화면 6: 카드뉴스 (스켈레톤)
 # ─────────────────────────────────────────────
 elif app_mode == "🎨 카드뉴스":
     st.markdown("""
@@ -488,10 +700,51 @@ elif app_mode == "🎨 카드뉴스":
     </div>
     """, unsafe_allow_html=True)
 
-    pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
+    pool = (
+        list(st.session_state.cardnews_candidates)
+        + list(st.session_state.articles_naver)
+        + list(st.session_state.articles_tech)
+    )
     if not pool:
         st.info("먼저 [네이버 뉴스 검색] 또는 [최신 기술 동향] 탭에서 기사를 수집하세요.")
     else:
+        with st.expander("🗂 카드뉴스 후보 관리", expanded=False):
+            candidates = st.session_state.cardnews_candidates
+            if candidates:
+                df_candidates = pd.DataFrame(
+                    [
+                        {
+                            "번호": i + 1,
+                            "제목": c.get("title", ""),
+                            "출처": c.get("press", ""),
+                            "발행일": c.get("date", ""),
+                            "썸네일URL": c.get("img_url", ""),
+                            "링크": c.get("link", ""),
+                        }
+                        for i, c in enumerate(candidates)
+                    ]
+                )
+                st.dataframe(df_candidates, use_container_width=True, height=180)
+                remove_idx_list = st.multiselect(
+                    "삭제할 후보 선택(복수 선택 가능)",
+                    options=list(range(len(candidates))),
+                    format_func=lambda i: f"{i+1}. {candidates[i].get('title', '')[:60]}",
+                    key="card_candidate_remove_idx_list",
+                )
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("선택 후보 삭제", use_container_width=True):
+                        for i in sorted(remove_idx_list, reverse=True):
+                            candidates.pop(i)
+                        st.success(f"삭제 완료: {len(remove_idx_list)}건")
+                with c2:
+                    if st.button("후보 전체 초기화", use_container_width=True):
+                        st.session_state.cardnews_candidates = []
+                        st.success("카드뉴스 후보를 모두 초기화했습니다.")
+            else:
+                st.caption("현재 제안 연동 카드뉴스 후보가 없습니다.")
+
+        st.caption(f"카드 후보: 제안연동 {len(st.session_state.cardnews_candidates)}건 / 전체 {len(pool)}건")
         titles = [f"{i+1}. {html.escape(a.get('title',''))}" for i, a in enumerate(pool)]
         idx = st.selectbox("카드로 렌더할 기사 선택", range(len(pool)), format_func=lambda i: titles[i])
         template = st.selectbox("템플릿", cardnews.available_templates())
