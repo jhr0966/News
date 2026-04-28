@@ -119,21 +119,23 @@
 
 ---
 
-## 5) 실행 로드맵
+## 5) 실행 로드맵 (Local First)
 
-### Phase 1 — Foundation (1~2주)
-- 수집 안정화 + 저장소 분리(raw/curated)
+### Phase A — Local MVP (1~2주)
+- 로컬 저장소 구축(JSONL/Parquet) 및 경로 표준화
+- 수집 안정화 + raw/curated 분리
 - 날짜 정규화(상대시간 → 절대시간)
-- Streamlit에서 데이터 조회 기반으로 전환
+- Streamlit에서 DuckDB 기반 조회로 전환
 
-### Phase 2 — Insights (1~2주)
+### Phase B — Insights/LLM (1~3주)
 - 워드클라우드/트렌드/필터 고도화
-- 저장 데이터 기반 drill-down 테이블
-
-### Phase 3 — LLM & Proposals (2~4주)
 - chunk/embedding 파이프라인 구축
-- 작업-뉴스 매칭 엔진
-- 제안서 자동 작성 기능 릴리스
+- 작업-뉴스 매칭 엔진 + 제안서 초안 생성
+
+### Phase C — DB Migration (1~2주)
+- PostgreSQL(+pgvector) 스키마 구성
+- 로컬 데이터 마이그레이션 스크립트 작성
+- Repository 구현체만 교체하여 서비스 연속성 유지
 
 ---
 
