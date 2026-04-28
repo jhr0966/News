@@ -21,6 +21,8 @@
 - 카드뉴스 후보 관리 UI 추가(목록 확인/선택 삭제/전체 초기화).
 - 제안 히스토리 JSON에서 카드뉴스 후보 일괄 불러오기 기능 추가.
 - 제안 추천 데이터에 카드뉴스용 `img_url/date/published_at` 필드 전달 추가.
+- `app_helpers.py` 추가 — 카드뉴스 후보 생성/중복체크/JSON import/후보 DataFrame 빌더 유틸 제공.
+- `tests/test_app_helpers.py` 추가 — helper 로직 단위 테스트.
 - `tests/test_app_pages_smoke.py` 추가 — Streamlit 4개 페이지의 기본 렌더링 스모크 테스트 자동화.
 - `Makefile`에 `test` 타깃 추가 (`pytest -q tests/test_app_pages_smoke.py`).
 - `requirements.txt`에 `pytest` 추가.
@@ -44,6 +46,7 @@
 - `app.py` 제안 화면 상세에 점수 분해(rel/fresh/src)와 최근 아티팩트 이력 테이블 추가.
 - `app.py` 카드뉴스 화면이 제안 연동 후보 + 수집 기사 풀을 함께 렌더하도록 확장.
 - `app.py` 카드뉴스 화면에 후보 관리(expander)와 큐 정리 액션을 추가.
+- `app.py`의 후보/히스토리 중복 로직을 `app_helpers.py`로 모듈화(가독성/유지보수성 개선).
 - `app.py` 카드뉴스 후보 관리가 다중 삭제/메타데이터 컬럼(발행일/썸네일URL)을 지원하도록 확장.
 - `README.md`에 Streamlit 개발환경 빠른 시작 절차와 blueprint 문서 링크를 추가.
 - `scraper.py`에 `published_at`(UTC ISO8601) 정규화 로직을 추가해 상대시간(예: N분 전/시간 전/일 전)을 절대시각으로 저장하도록 개선.

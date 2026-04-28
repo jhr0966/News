@@ -21,6 +21,12 @@ from proposal_engine import (
     save_proposals_artifacts,
     list_recent_proposal_artifacts,
 )
+from app_helpers import (
+    add_candidate_if_new,
+    build_cardnews_candidate_from_recommendation,
+    build_candidates_dataframe,
+    import_candidates_from_proposal_json,
+)
 
 
 def _safe_filename(text: str, fallback: str = "news") -> str:
@@ -631,20 +637,9 @@ elif app_mode == "🤝 자동화 과제 제안":
                             st.caption(rec["summary"])
                         add_key = f"add_card_{p['task_id']}_{idx}_{abs(hash(rec.get('link', rec.get('title', ''))))}"
                         if st.button("➕ 카드뉴스 후보로 추가", key=add_key):
-                            candidate = {
-                                "title": rec.get("title", ""),
-                                "press": rec.get("press", ""),
-                                "summary": rec.get("summary", ""),
-                                "content": rec.get("summary", ""),
-                                "keywords": ", ".join(rec.get("overlap_terms", [])),
-                                "link": rec.get("link", ""),
-                                "date": rec.get("date", "추천"),
-                                "published_at": rec.get("published_at", ""),
-                                "img_url": rec.get("img_url", ""),
-                            }
+                            candidate = build_cardnews_candidate_from_recommendation(rec)
                             existing = st.session_state.cardnews_candidates
-                            if not any(c.get("link") == candidate.get("link") and c.get("title") == candidate.get("title") for c in existing):
-                                existing.append(candidate)
+                            if add_candidate_if_new(existing, candidate):
                                 st.success("카드뉴스 후보에 추가했습니다.")
                             else:
                                 st.info("이미 카드뉴스 후보에 있습니다.")
@@ -664,25 +659,7 @@ elif app_mode == "🤝 자동화 과제 제안":
                 if st.button("선택 JSON에서 카드후보 일괄 불러오기", use_container_width=True):
                     path = Path(selected_json["path"])
                     if path.exists():
-                        loaded = json.loads(path.read_text(encoding="utf-8"))
-                        added = 0
-                        for p in loaded:
-                            for rec in p.get("recommendations", []):
-                                candidate = {
-                                    "title": rec.get("title", ""),
-                                    "press": rec.get("press", ""),
-                                    "summary": rec.get("summary", ""),
-                                    "content": rec.get("summary", ""),
-                                    "keywords": ", ".join(rec.get("overlap_terms", [])),
-                                    "link": rec.get("link", ""),
-                                    "date": rec.get("date", "추천"),
-                                    "published_at": rec.get("published_at", ""),
-                                    "img_url": rec.get("img_url", ""),
-                                }
-                                existing = st.session_state.cardnews_candidates
-                                if not any(c.get("link") == candidate.get("link") and c.get("title") == candidate.get("title") for c in existing):
-                                    existing.append(candidate)
-                                    added += 1
+                        added = import_candidates_from_proposal_json(path, st.session_state.cardnews_candidates)
                         st.success(f"카드뉴스 후보 {added}건을 추가했습니다.")
                     else:
                         st.error("선택한 JSON 파일을 찾을 수 없습니다.")
@@ -711,19 +688,7 @@ elif app_mode == "🎨 카드뉴스":
         with st.expander("🗂 카드뉴스 후보 관리", expanded=False):
             candidates = st.session_state.cardnews_candidates
             if candidates:
-                df_candidates = pd.DataFrame(
-                    [
-                        {
-                            "번호": i + 1,
-                            "제목": c.get("title", ""),
-                            "출처": c.get("press", ""),
-                            "발행일": c.get("date", ""),
-                            "썸네일URL": c.get("img_url", ""),
-                            "링크": c.get("link", ""),
-                        }
-                        for i, c in enumerate(candidates)
-                    ]
-                )
+                df_candidates = build_candidates_dataframe(candidates)
                 st.dataframe(df_candidates, use_container_width=True, height=180)
                 remove_idx_list = st.multiselect(
                     "삭제할 후보 선택(복수 선택 가능)",

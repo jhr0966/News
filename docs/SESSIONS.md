@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-04-28 · Refactor (후보/히스토리 로직 모듈화)
+
+**브랜치:** `work`
+**카테고리:** `refactor`
+**상태:** in-progress
+
+**한 일:**
+1. `app_helpers.py` 추가 — 카드뉴스 후보 생성/중복체크/히스토리 JSON import/DataFrame 변환 유틸 분리.
+2. `app.py`의 중복 로직(후보 추가, JSON import, 후보 테이블 생성)을 helper 호출로 치환.
+3. `tests/test_app_helpers.py` 추가로 helper 함수 단위 검증.
+
+**다음 세션 TODO:**
+- `app.py` 화면별 renderer 함수 분리(모듈 단위)
+- 제안 화면 상태관리 키(`pr_*`) prefix 표준화
+- app 레이아웃/CSS 외부 파일 완전 분리
+
+**블로커:** 없음.
+
+---
+
 ## 2026-04-28 · Phase A 완료 정리 (MVP 완료)
 
 **브랜치:** `work`
