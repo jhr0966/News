@@ -11,6 +11,7 @@ from scraper import (
 )
 import insights
 import cardnews
+from local_store import LocalNewsRepository
 
 
 def _safe_filename(text: str, fallback: str = "news") -> str:
@@ -101,7 +102,16 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 # ─────────────────────────────────────────────
 # 세션 상태 초기화
 # ─────────────────────────────────────────────
-for k, v in [("articles_naver", []), ("keyword_naver", ""), ("debug_log", ""), ("articles_tech", [])]:
+NEWS_REPOSITORY = LocalNewsRepository()
+bootstrap_naver = NEWS_REPOSITORY.load_latest_articles("naver")
+bootstrap_tech = NEWS_REPOSITORY.load_latest_articles("tech")
+
+for k, v in [
+    ("articles_naver", bootstrap_naver),
+    ("keyword_naver", ""),
+    ("debug_log", ""),
+    ("articles_tech", bootstrap_tech),
+]:
     if k not in st.session_state:
         st.session_state[k] = v
 
@@ -343,8 +353,11 @@ if app_mode == "🔍 네이버 뉴스 검색":
                 enrich_articles_parallel(arts_list, progress_cb=on_progress)
 
                 st.session_state.articles_naver = arts_list
+                saved = NEWS_REPOSITORY.save_articles_batch("naver", arts_list, keyword=keyword.strip())
                 status_box.empty(); prog_bar.empty()
                 st.success(f"✅ 네이버 뉴스 **{total}건** 수집 완료!")
+                if saved:
+                    st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
         except Exception as e:
             status_box.empty(); prog_bar.empty()
             st.error(f"❌ 오류 발생: {e}")
@@ -427,10 +440,13 @@ elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
                     collected.extend(raw_arts)
 
                 st.session_state.articles_tech = collected
+                saved = NEWS_REPOSITORY.save_articles_batch("tech", collected, keyword="selected_portals")
                 st.session_state.debug_log = log_buf.getvalue()
                 status_box.empty(); prog_bar.empty()
                 if collected:
                     st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+                    if saved:
+                        st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
                 else:
                     st.warning("⚠️ 수집된 기사가 0건입니다. 디버그 체크박스를 켜고 다시 시도해 원인을 확인해보세요.")
 

@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-04-28 · Phase 1 착수 (Local First 저장소 시작)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `local_store.py` 추가 — 뉴스 수집 결과를 `jsonl + parquet`로 저장하는 로컬 저장소 유틸 구현.
+2. `app.py` 시작 시 `naver`/`tech` 최신 로컬 배치를 자동 로드하도록 연결.
+3. `app.py`에서 뉴스 수집 성공 시 자동 로컬 저장 + 저장 경로 캡션 노출.
+4. `CHANGELOG.md` 업데이트.
+5. `NewsRepository`/`LocalNewsRepository` 추상화 도입으로 저장소 스위치 준비.
+6. `tests/test_local_store.py` 추가로 Local 저장/복구 동작 검증.
+
+**다음 세션 TODO:**
+- Shipyard Excel 업로드/검증/Parquet 저장 파이프라인 1차 구현
+- `data/` 경로/스키마 검증 테스트 추가
+
+**블로커:** 없음.
+
+---
+
 ## 2026-04-27 · 페이지 테스트 가능 상태로 개선 (스모크 테스트 추가)
 
 **브랜치:** `work`
