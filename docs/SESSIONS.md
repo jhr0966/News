@@ -5,6 +5,71 @@
 
 ---
 
+## 2026-04-28 · Phase 1 Step 4 (제안서 아티팩트 저장/다운로드)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `proposal_engine.py`에 `proposals_to_markdown`, `save_proposals_artifacts` 추가.
+2. `app.py` 제안 화면에서 생성 결과를 세션에 보관하고 JSON/Markdown 다운로드 제공.
+3. 생성 결과를 `data/artifacts/proposals/YYYY-MM-DD/`에 JSON/MD로 저장하고 경로 표시.
+4. `tests/test_proposal_engine.py`에 아티팩트 저장/마크다운 렌더 검증 추가.
+
+**다음 세션 TODO:**
+- 추천 점수에 작업 난이도/효과 가중치 추가
+- 제안서 템플릿(경영진 요약/현장 실행안) 2종으로 분리
+- 카드뉴스 화면과 제안 화면 데이터 연동
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 3 (작업-뉴스 매칭 제안 화면)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `proposal_engine.py` 추가 — 작업-뉴스 토큰 중첩 기반 스코어링/추천(`suggest_for_tasks`) 구현.
+2. `shipyard_store.py`에 최신 작업 Parquet 로더(`load_latest_shipyard_tasks`) 추가.
+3. `app.py`에 신규 모드 `🤝 자동화 과제 제안` 추가(요약표 + 작업별 추천 상세).
+4. `tests/test_proposal_engine.py` 추가 및 `tests/test_app_pages_smoke.py` 신규 메뉴 옵션 반영.
+5. `README.md`, `CHANGELOG.md` 업데이트.
+
+**다음 세션 TODO:**
+- 제안 결과를 파일(JSON/MD)로 저장하는 export 기능 추가
+- 추천 스코어에 비용/난이도/효과 가중치 반영
+- 카드뉴스와 제안서 연결(선택 기사로 카드 자동 생성)
+
+**블로커:** 없음.
+
+---
+
+## 2026-04-28 · Phase 1 Step 2 (조선소 작업 데이터 업로드 파이프라인)
+
+**브랜치:** `work`
+**카테고리:** `feat`
+**상태:** in-progress
+
+**한 일:**
+1. `shipyard_store.py` 추가 — Excel 업로드 raw 저장, 필수 컬럼 검증, Parquet 저장 파이프라인 구현.
+2. `app.py`에 신규 모드 `🏭 조선소 작업 데이터` 추가 및 업로드 UI/검증 결과 표시 연결.
+3. `tests/test_shipyard_store.py` 추가 — 성공/필수 컬럼 누락 케이스 검증.
+4. `tests/test_app_pages_smoke.py`에 신규 메뉴 옵션 검증 추가.
+5. 엑셀 엔진 미설치(openpyxl) 환경에서도 사용자 안내 에러를 반환하도록 처리.
+
+**다음 세션 TODO:**
+- 업로드된 조선소 데이터 미리보기/필터링 UI 추가
+- 뉴스-작업 매칭 스코어링 함수(룰 기반) 1차 구현
+- 제안서 생성 템플릿과 근거 링크 연결
+
+**블로커:** 없음.
+
+---
+
 ## 2026-04-28 · Phase 1 착수 (Local First 저장소 시작)
 
 **브랜치:** `work`
