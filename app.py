@@ -126,6 +126,43 @@ def _init_session_state(repo: LocalNewsRepository) -> None:
 NEWS_REPOSITORY = LocalNewsRepository()
 _init_session_state(NEWS_REPOSITORY)
 
+
+def _render_quick_guide():
+    st.markdown("### 🚦 빠른 시작")
+    step1, step2, step3 = st.columns(3)
+    step1.info("**1) 뉴스 수집**\n\n🔍 네이버 검색 또는 🚀 최신 기술 동향에서 기사 확보")
+    step2.info("**2) 데이터 활용**\n\n📊 인사이트 분석 / 🤝 자동화 과제 제안 생성")
+    step3.info("**3) 콘텐츠 출력**\n\n🎨 카드뉴스 슬라이드로 검토 및 공유")
+
+
+def _render_overview_dashboard():
+    total_naver = len(st.session_state.articles_naver)
+    total_tech = len(st.session_state.articles_tech)
+    total_all = total_naver + total_tech
+    st.markdown("""
+    <div class="header-wrap">
+        <span class="header-logo">🧭 뉴스 운영 대시보드</span>
+        <span class="header-sub">수집 현황 · 다음 작업 가이드</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("총 수집 기사", f"{total_all}건")
+    m2.metric("네이버", f"{total_naver}건")
+    m3.metric("기술동향", f"{total_tech}건")
+
+    _render_quick_guide()
+
+    st.markdown("### 🧩 기능별 진입 포인트")
+    g1, g2 = st.columns(2)
+    with g1:
+        st.success("**데이터 수집**\n\n- 🔍 네이버 뉴스 검색: 키워드 중심 수집\n- 🚀 최신 기술 동향: 사이트 일괄 수집")
+        st.warning("**데이터 준비**\n\n- 🏭 조선소 작업 데이터: 엑셀 업로드/검증")
+    with g2:
+        st.info("**분석/의사결정**\n\n- 📊 인사이트 보드: 언론사/키워드/트렌드 분석\n- 🤝 자동화 과제 제안: 작업-뉴스 매칭")
+        st.error("**콘텐츠 전달**\n\n- 🎨 카드뉴스: 슬라이드 탐색 + 자동 재생")
+
+
 # ─────────────────────────────────────────────
 # 사이드바 메뉴 (화면 분리)
 # ─────────────────────────────────────────────
@@ -134,6 +171,7 @@ with st.sidebar:
     app_mode = st.radio(
         "작업할 기능을 선택하세요.",
         [
+            "🧭 대시보드",
             "🔍 네이버 뉴스 검색",
             "🚀 최신 기술 동향 (AI/자동화)",
             "🏭 조선소 작업 데이터",
@@ -144,7 +182,8 @@ with st.sidebar:
         label_visibility="collapsed"
     )
     st.markdown("---")
-    st.markdown("💡 **Tip**: 각 탭별로 수집된 데이터는 다른 탭으로 이동해도 유지됩니다.")
+    st.caption("💡 각 탭의 데이터는 세션 내에서 유지됩니다.")
+    st.metric("현재 뉴스 풀", f"{len(st.session_state.articles_naver) + len(st.session_state.articles_tech)}건")
 
 # ─────────────────────────────────────────────
 # 공통 UI 렌더링 함수 (재사용)
@@ -317,9 +356,15 @@ def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
             st.dataframe(df, use_container_width=True, height=500, column_config=_table_column_config())
 
 # ─────────────────────────────────────────────
+# 화면 0: 대시보드
+# ─────────────────────────────────────────────
+if app_mode == "🧭 대시보드":
+    _render_overview_dashboard()
+
+# ─────────────────────────────────────────────
 # 화면 1: 네이버 뉴스 검색
 # ─────────────────────────────────────────────
-if app_mode == "🔍 네이버 뉴스 검색":
+elif app_mode == "🔍 네이버 뉴스 검색":
     st.markdown("""
     <div class="header-wrap">
         <span class="header-logo">📰 네이버 뉴스 스크래퍼</span>
