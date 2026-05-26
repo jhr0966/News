@@ -10,6 +10,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, urljoin, urlparse
 from collections import Counter
+import xml.etree.ElementTree as ET
 
 # ── HTML 파서 선택 ──────────────────────────────────────
 # lxml이 실제로 사용 가능하면 lxml을, 아니면 표준 html.parser로 fallback.
@@ -282,6 +283,46 @@ def search_naver_news(keyword: str, max_results: int = 10, debug: bool = False) 
         except Exception:
             continue
 
+    return articles
+
+
+def search_google_news(keyword: str, max_results: int = 10, debug: bool = False) -> list[dict]:
+    encoded = quote(keyword)
+    rss_url = f"https://news.google.com/rss/search?q={encoded}&hl=ko&gl=KR&ceid=KR:ko"
+    session = _build_session()
+    try:
+        resp = session.get(rss_url, headers=_headers(), timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        raise RuntimeError(f"구글 뉴스 RSS 요청 실패: {e}")
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError:
+        return []
+
+    articles = []
+    for item in root.findall('.//item')[:max_results]:
+        title = (item.findtext('title') or '').strip()
+        link = (item.findtext('link') or '').strip()
+        pub = (item.findtext('pubDate') or '').strip()
+        desc = (item.findtext('description') or '').strip()
+        source_tag = item.find('source')
+        press = (source_tag.text or 'Google News').strip() if source_tag is not None else 'Google News'
+
+        articles.append({
+            'title': title,
+            'press': press,
+            'date': pub,
+            'published_at': normalize_published_at(pub),
+            'link': link,
+            'summary': desc,
+            'content': '',
+            'keywords': '',
+            'img_url': '',
+        })
+    if debug:
+        print(f"[search_google_news] RSS 결과 {len(articles)}건")
     return articles
 
 
