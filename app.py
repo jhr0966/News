@@ -136,22 +136,72 @@ def _build_page_context(page_name: str) -> str:
     total_naver = len(st.session_state.get("articles_naver", []))
     total_tech = len(st.session_state.get("articles_tech", []))
     total_all = total_naver + total_tech
-    base = [
+
+    naver_articles = st.session_state.get("articles_naver", [])
+    tech_articles = st.session_state.get("articles_tech", [])
+    all_articles = list(naver_articles) + list(tech_articles)
+
+    def _article_preview(arts: list[dict], limit: int = 5) -> str:
+        if not arts:
+            return "- 없음"
+        lines = []
+        for i, a in enumerate(arts[:limit], start=1):
+            lines.append(
+                f"- {i}) 제목={a.get('title','')} | 언론사={a.get('press','')} | 날짜={a.get('date','')} | 키워드={a.get('keywords','')}"
+            )
+        return "\n".join(lines)
+
+    tasks_df = load_latest_shipyard_tasks()
+    task_preview = "- 없음"
+    if not tasks_df.empty:
+        rows = []
+        for i, (_, r) in enumerate(tasks_df.head(5).iterrows(), start=1):
+            rows.append(f"- {i}) task_id={r.get('task_id','')} | process={r.get('process','')} | task_name={r.get('task_name','')}")
+        task_preview = "\n".join(rows)
+
+    proposal_results = st.session_state.get("proposal_results", [])
+    proposal_preview = "- 없음"
+    if proposal_results:
+        rows = []
+        for i, p in enumerate(proposal_results[:5], start=1):
+            rows.append(f"- {i}) task={p.get('task_id','')} {p.get('task_name','')} | 추천기사수={p.get('recommendation_count',0)}")
+        proposal_preview = "\n".join(rows)
+
+    page_specific = {
+        "🧭 대시보드": "대시보드 화면: 진행 단계, 주요 지표, 기능 진입 가이드 표시",
+        "🔍 네이버 뉴스 검색": f"네이버 검색 화면: 현재 키워드={st.session_state.get('keyword_naver','')} | 수집건수옵션=[5,10,15,20,30]",
+        "🚀 최신 기술 동향 (AI/자동화)": f"기술 동향 화면: 대상 사이트={', '.join(TARGET_SITES.keys())}",
+        "📊 인사이트 보드": "인사이트 화면: 언론사/키워드/일자별 차트와 집계",
+        "🏭 조선소 작업 데이터": f"조선소 데이터 화면: 필수컬럼={', '.join(REQUIRED_COLUMNS)}",
+        "🤝 자동화 과제 제안": "과제 제안 화면: 작업 데이터와 뉴스 매칭 추천",
+        "🎨 카드뉴스": "카드뉴스 화면: 카드 슬라이더, 키보드 탐색, 자동 넘김",
+    }
+
+    blocks = [
+        "[공통 상태]",
         f"현재 화면: {page_name}",
         f"총 뉴스: {total_all}건 (네이버 {total_naver} / 기술동향 {total_tech})",
         "앱 목적: 뉴스 수집, 분석, 카드뉴스 생성, 자동화 과제 추천",
+        "",
+        "[현재 화면 설명]",
+        page_specific.get(page_name, ""),
+        "",
+        "[네이버 뉴스 샘플]",
+        _article_preview(naver_articles),
+        "",
+        "[기술 동향 뉴스 샘플]",
+        _article_preview(tech_articles),
+        "",
+        "[전체 뉴스 샘플]",
+        _article_preview(all_articles),
+        "",
+        "[조선소 작업 데이터 샘플]",
+        task_preview,
+        "",
+        "[자동화 제안 결과 샘플]",
+        proposal_preview,
     ]
-    page_hints = {
-        "🧭 대시보드": "대시보드: 전체 단계 안내(수집→분석→출력)",
-        "🔍 네이버 뉴스 검색": "네이버 검색: 키워드, 수집건수, 디버그 옵션",
-        "🚀 최신 기술 동향 (AI/자동화)": "기술동향: 사이트 선택 후 일괄 수집",
-        "📊 인사이트 보드": "인사이트: 언론사/키워드/일자 트렌드 차트",
-        "🏭 조선소 작업 데이터": "조선소 데이터: 엑셀 업로드, 필수컬럼 검증",
-        "🤝 자동화 과제 제안": "제안: 작업데이터와 뉴스 매칭 추천",
-        "🎨 카드뉴스": "카드뉴스: 슬라이드 탐색, 키보드/자동재생",
-    }
-    base.append(page_hints.get(page_name, ""))
-    return "\n".join([b for b in base if b])
+    return "\n".join([b for b in blocks if b is not None])
 
 
 def _ask_groq(messages: list[dict]) -> str:
