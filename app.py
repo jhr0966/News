@@ -104,10 +104,13 @@ st.markdown("""
 hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 .stTabs [data-baseweb="tab"] { font-family: 'IBM Plex Sans KR', sans-serif !important; font-size: 0.88rem !important; font-weight: 500 !important; }
 .debug-box { background: #0D1117; color: #C9D1D9; font-family: monospace; font-size: 0.8rem; padding: 1rem; border-radius: 8px; white-space: pre-wrap; line-height: 1.6; max-height: 400px; overflow-y: auto; }
-.menu-stack{display:flex;flex-direction:column;gap:6px;margin-top:4px;margin-bottom:8px;}
-.menu-btn .stButton>button{width:100%;text-align:left;border:1px solid #D9DDE5;background:rgba(255,255,255,0.78);color:#1f2937;border-radius:12px;padding:9px 12px;font-size:.88rem;font-weight:600;line-height:1.25;box-shadow:0 1px 2px rgba(15,23,42,.05);backdrop-filter:blur(8px);transition:all .18s ease;}
-.menu-btn .stButton>button:hover{background:rgba(255,255,255,0.96);border-color:#C7CDD8;transform:translateY(-1px);}
-.menu-btn.active .stButton>button{background:linear-gradient(180deg,#F9FAFB 0%,#EEF2F7 100%);color:#0F172A;border-color:#BFC7D4;box-shadow:inset 0 0 0 1px #ffffff, 0 2px 6px rgba(15,23,42,.08);}
+.stSidebar [role="radiogroup"]{display:flex;flex-direction:column;gap:4px;}
+.stSidebar [role="radiogroup"] label{margin:0 !important;}
+.stSidebar [role="radiogroup"] [data-baseweb="radio"]{width:100%;background:rgba(247,246,242,.85);border:1px solid #E1DFD7;border-radius:12px;padding:8px 10px;min-height:40px;transition:all .15s ease;}
+.stSidebar [role="radiogroup"] [data-baseweb="radio"]:hover{background:rgba(255,255,255,.92);border-color:#CFCBC0;}
+.stSidebar [role="radiogroup"] [data-baseweb="radio"] > div:first-child{margin-top:0 !important;}
+.stSidebar [role="radiogroup"] p{font-size:.92rem !important;font-weight:600 !important;color:#1F2937 !important;line-height:1.2 !important;}
+.stSidebar [role="radiogroup"] input:checked + div{background:linear-gradient(180deg,#FFFFFF 0%,#F1EFE7 100%);border-radius:10px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -338,19 +341,15 @@ with st.sidebar:
         "📊 인사이트 보드",
         "🎨 카드뉴스",
     ]
-    if "app_mode" not in st.session_state:
-        st.session_state.app_mode = menu_items[0]
-    st.markdown('<div class="menu-stack">', unsafe_allow_html=True)
-    for item in menu_items:
-        active = (st.session_state.app_mode == item)
-        wrap_cls = "menu-btn active" if active else "menu-btn"
-        st.markdown(f'<div class="{wrap_cls}">', unsafe_allow_html=True)
-        if st.button(item, key=f"menu_{item}"):
-            st.session_state.app_mode = item
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-    app_mode = st.session_state.app_mode
+    current_mode = st.session_state.get("app_mode", menu_items[0])
+    current_idx = menu_items.index(current_mode) if current_mode in menu_items else 0
+    app_mode = st.radio(
+        "작업할 기능을 선택하세요.",
+        menu_items,
+        index=current_idx,
+        key="app_mode",
+        label_visibility="collapsed",
+    )
     st.markdown("---")
     st.caption("💡 각 탭의 데이터는 세션 내에서 유지됩니다.")
     st.metric("현재 뉴스 풀", f"{len(st.session_state.articles_naver) + len(st.session_state.articles_tech)}건")
