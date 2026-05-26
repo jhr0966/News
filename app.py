@@ -104,8 +104,10 @@ st.markdown("""
 hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 .stTabs [data-baseweb="tab"] { font-family: 'IBM Plex Sans KR', sans-serif !important; font-size: 0.88rem !important; font-weight: 500 !important; }
 .debug-box { background: #0D1117; color: #C9D1D9; font-family: monospace; font-size: 0.8rem; padding: 1rem; border-radius: 8px; white-space: pre-wrap; line-height: 1.6; max-height: 400px; overflow-y: auto; }
-.menu-btn .stButton>button{width:100%;text-align:left;border:1px solid #E2E8F0;background:#fff;color:#0f172a;border-radius:12px;padding:10px 12px;margin-bottom:6px;}
-.menu-btn.active .stButton>button{background:#1D6FE8;color:#fff;border-color:#1D6FE8;}
+.menu-stack{display:flex;flex-direction:column;gap:6px;margin-top:4px;margin-bottom:8px;}
+.menu-btn .stButton>button{width:100%;text-align:left;border:1px solid #D9DDE5;background:rgba(255,255,255,0.78);color:#1f2937;border-radius:12px;padding:9px 12px;font-size:.88rem;font-weight:600;line-height:1.25;box-shadow:0 1px 2px rgba(15,23,42,.05);backdrop-filter:blur(8px);transition:all .18s ease;}
+.menu-btn .stButton>button:hover{background:rgba(255,255,255,0.96);border-color:#C7CDD8;transform:translateY(-1px);}
+.menu-btn.active .stButton>button{background:linear-gradient(180deg,#F9FAFB 0%,#EEF2F7 100%);color:#0F172A;border-color:#BFC7D4;box-shadow:inset 0 0 0 1px #ffffff, 0 2px 6px rgba(15,23,42,.08);}
 </style>
 """, unsafe_allow_html=True)
 
@@ -338,6 +340,7 @@ with st.sidebar:
     ]
     if "app_mode" not in st.session_state:
         st.session_state.app_mode = menu_items[0]
+    st.markdown('<div class="menu-stack">', unsafe_allow_html=True)
     for item in menu_items:
         active = (st.session_state.app_mode == item)
         wrap_cls = "menu-btn active" if active else "menu-btn"
@@ -346,6 +349,7 @@ with st.sidebar:
             st.session_state.app_mode = item
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
     app_mode = st.session_state.app_mode
     st.markdown("---")
     st.caption("💡 각 탭의 데이터는 세션 내에서 유지됩니다.")
@@ -368,7 +372,7 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
     st.markdown(f'<div style="text-align:center;font-weight:700;font-size:1.05rem;">{persona_name or "이름 미설정"}</div>', unsafe_allow_html=True)
-    st.caption(f"{persona.get('department','부서 미설정')} · {persona.get('role','직무 미설정')}")
+    st.markdown(f'<div style="text-align:center;color:#6b7280;font-size:.82rem;margin-top:2px;">{persona.get("department","부서 미설정")} · {persona.get("role","직무 미설정")}</div>', unsafe_allow_html=True)
     if st.button("페르소나 만들기", use_container_width=True, key="open_persona_editor"):
         st.session_state.persona_editor_open = True
         st.rerun()
