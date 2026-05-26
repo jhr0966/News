@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import io
 import re
@@ -637,7 +638,7 @@ elif app_mode == "🎨 카드뉴스":
     st.markdown("""
     <div class="header-wrap">
         <span class="header-logo">🎨 카드뉴스</span>
-        <span class="header-sub">기사를 카드형 HTML/이미지로 렌더</span>
+        <span class="header-sub">슬라이드형 카드 뷰어 · 키보드 탐색 · 자동 재생</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -645,8 +646,86 @@ elif app_mode == "🎨 카드뉴스":
     if not pool:
         st.info("먼저 [네이버 뉴스 검색] 또는 [최신 기술 동향] 탭에서 기사를 수집하세요.")
     else:
-        titles = [f"{i+1}. {html.escape(a.get('title',''))}" for i, a in enumerate(pool)]
-        idx = st.selectbox("카드로 렌더할 기사 선택", range(len(pool)), format_func=lambda i: titles[i])
-        template = st.selectbox("템플릿", cardnews.available_templates())
-        st.markdown(cardnews.render_html(pool[idx], template=template), unsafe_allow_html=True)
-        st.caption("※ PNG export 는 차기 세션에서 Pillow 연동 예정.")
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            autoplay_sec = st.slider("자동 넘김(초)", min_value=2, max_value=20, value=6)
+        with c2:
+            st.caption("조작: **← / →**, **Space**(다음), 버튼(이전/다음), 자동 넘김")
+
+        cards = []
+        for i, article in enumerate(pool, start=1):
+            cards.append({
+                "no": i,
+                "title": article.get("title", "제목 없음"),
+                "press": article.get("press", ""),
+                "date": article.get("date", ""),
+                "summary": article.get("summary", ""),
+                "content": article.get("content", ""),
+                "keywords": article.get("keywords", ""),
+                "img_url": article.get("img_url", ""),
+                "link": article.get("link", "#"),
+            })
+
+        payload = json.dumps(cards, ensure_ascii=False)
+        html_block = f"""
+        <div id="cn-root"></div>
+        <script>
+        const cards = {payload};
+        const autoplayMs = {int(autoplay_sec * 1000)};
+        let idx = 0;
+        let timer = null;
+
+        function esc(s) {{
+          return String(s || '').replace(/[&<>"']/g, m => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[m]));
+        }}
+        function bodyText(card) {{
+          const base = (card.content && card.content.length > 50) ? card.content : card.summary;
+          return (base || '본문 내용 없음').slice(0, 320);
+        }}
+
+        function render() {{
+          const c = cards[idx] || {{}};
+          const kws = (c.keywords || '').split(',').map(k => k.trim()).filter(Boolean)
+            .map(k => `<span style="background:#F1F5F9;padding:4px 8px;border-radius:6px;font-size:12px;">#${{esc(k)}}</span>`).join(' ');
+          const img = (c.img_url || '').startsWith('http')
+            ? `<img src="${{esc(c.img_url)}}" style="width:100%;max-height:320px;object-fit:cover;border-radius:10px;border:1px solid #E2E8F0;"/>`
+            : `<div style="height:220px;display:flex;align-items:center;justify-content:center;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;color:#94A3B8;">No Image</div>`;
+
+          document.getElementById('cn-root').innerHTML = `
+            <div style="border:1px solid #E2E8F0;border-radius:14px;padding:16px;background:white;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <div><strong>${{idx+1}} / ${{cards.length}}</strong></div>
+                <div>
+                  <button id="prev-btn" style="margin-right:8px;padding:6px 12px;">◀ 이전</button>
+                  <button id="next-btn" style="padding:6px 12px;">다음 ▶</button>
+                </div>
+              </div>
+              ${{img}}
+              <h3 style="margin:12px 0 6px 0;">${{esc(c.title || '제목 없음')}}</h3>
+              <div style="color:#64748B;font-size:13px;margin-bottom:8px;">${{esc(c.press || '')}} · ${{esc(c.date || '')}} · #${{esc(c.no || '')}}</div>
+              <div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;">${{kws}}</div>
+              <p style="line-height:1.6;color:#334155;">${{esc(bodyText(c))}}</p>
+              <a href="${{esc((c.link || '').startsWith('http') ? c.link : '#')}}" target="_blank" rel="noopener noreferrer">원문 보기 →</a>
+            </div>`;
+
+          document.getElementById('prev-btn').onclick = () => goPrev();
+          document.getElementById('next-btn').onclick = () => goNext();
+        }}
+
+        function goNext() {{ idx = (idx + 1) % cards.length; render(); }}
+        function goPrev() {{ idx = (idx - 1 + cards.length) % cards.length; render(); }}
+        function resetAutoplay() {{
+          if (timer) clearInterval(timer);
+          timer = setInterval(goNext, autoplayMs);
+        }}
+
+        window.addEventListener('keydown', (e) => {{
+          if (e.key === 'ArrowRight' || e.key === ' ') {{ e.preventDefault(); goNext(); resetAutoplay(); }}
+          if (e.key === 'ArrowLeft') {{ e.preventDefault(); goPrev(); resetAutoplay(); }}
+        }});
+
+        render();
+        resetAutoplay();
+        </script>
+        """
+        components.html(html_block, height=760, scrolling=False)
