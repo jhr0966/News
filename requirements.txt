@@ -5,3 +5,4 @@ requests
 pandas
 Pillow
 pytest
+python-dotenv>=1.0.1

@@ -5,6 +5,9 @@ import io
 import re
 import html
 import json
+import os
+import requests
+from dotenv import load_dotenv
 from scraper import (
     search_naver_news,
     fetch_latest_tech_news,
@@ -125,6 +128,90 @@ def _init_session_state(repo: LocalNewsRepository) -> None:
 
 NEWS_REPOSITORY = LocalNewsRepository()
 _init_session_state(NEWS_REPOSITORY)
+
+load_dotenv()
+
+
+def _build_page_context(page_name: str) -> str:
+    total_naver = len(st.session_state.get("articles_naver", []))
+    total_tech = len(st.session_state.get("articles_tech", []))
+    total_all = total_naver + total_tech
+    base = [
+        f"현재 화면: {page_name}",
+        f"총 뉴스: {total_all}건 (네이버 {total_naver} / 기술동향 {total_tech})",
+        "앱 목적: 뉴스 수집, 분석, 카드뉴스 생성, 자동화 과제 추천",
+    ]
+    page_hints = {
+        "🧭 대시보드": "대시보드: 전체 단계 안내(수집→분석→출력)",
+        "🔍 네이버 뉴스 검색": "네이버 검색: 키워드, 수집건수, 디버그 옵션",
+        "🚀 최신 기술 동향 (AI/자동화)": "기술동향: 사이트 선택 후 일괄 수집",
+        "📊 인사이트 보드": "인사이트: 언론사/키워드/일자 트렌드 차트",
+        "🏭 조선소 작업 데이터": "조선소 데이터: 엑셀 업로드, 필수컬럼 검증",
+        "🤝 자동화 과제 제안": "제안: 작업데이터와 뉴스 매칭 추천",
+        "🎨 카드뉴스": "카드뉴스: 슬라이드 탐색, 키보드/자동재생",
+    }
+    base.append(page_hints.get(page_name, ""))
+    return "\n".join([b for b in base if b])
+
+
+def _ask_groq(messages: list[dict]) -> str:
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return "GROQ_API_KEY가 없습니다. 프로젝트 루트의 .env 파일에 GROQ_API_KEY=... 형태로 추가해주세요."
+
+    try:
+        resp = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "llama-3.3-70b-versatile",
+                "messages": messages,
+                "temperature": 0.2,
+            },
+            timeout=40,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
+    except Exception as exc:
+        return f"LLM 호출 실패: {exc}"
+
+
+def _render_llm_chat_panel(page_name: str):
+    st.markdown("### 🤖 화면 컨텍스트 LLM")
+    st.caption("현재 메뉴의 맥락(화면/상태)을 자동 컨텍스트로 전달합니다.")
+
+    if "llm_chat_messages" not in st.session_state:
+        st.session_state.llm_chat_messages = []
+
+    context_text = _build_page_context(page_name)
+    with st.expander("컨텍스트 보기", expanded=False):
+        st.code(context_text)
+
+    chat_box = st.container(height=520)
+    with chat_box:
+        for m in st.session_state.llm_chat_messages:
+            with st.chat_message(m["role"]):
+                st.markdown(m["content"])
+
+    prompt = st.chat_input("현재 화면 기준으로 질문하세요", key="global_llm_chat")
+    if prompt:
+        st.session_state.llm_chat_messages.append({"role": "user", "content": prompt})
+        messages = [
+            {
+                "role": "system",
+                "content": "너는 Streamlit 뉴스 앱 도우미다. 제공된 화면 컨텍스트를 기준으로 구체적으로 답해라.",
+            },
+            {"role": "system", "content": f"[화면 컨텍스트]\n{context_text}"},
+        ] + st.session_state.llm_chat_messages[-12:]
+
+        answer = _ask_groq(messages)
+        st.session_state.llm_chat_messages.append({"role": "assistant", "content": answer})
+        st.rerun()
+
 
 
 def _render_quick_guide():
@@ -355,422 +442,428 @@ def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
         with tabs[-1]:
             st.dataframe(df, use_container_width=True, height=500, column_config=_table_column_config())
 
-# ─────────────────────────────────────────────
-# 화면 0: 대시보드
-# ─────────────────────────────────────────────
-if app_mode == "🧭 대시보드":
-    _render_overview_dashboard()
+main_col, chat_col = st.columns([2.2, 1], gap="large")
 
-# ─────────────────────────────────────────────
-# 화면 1: 네이버 뉴스 검색
-# ─────────────────────────────────────────────
-elif app_mode == "🔍 네이버 뉴스 검색":
-    st.markdown("""
-    <div class="header-wrap">
-        <span class="header-logo">📰 네이버 뉴스 스크래퍼</span>
-        <span class="header-sub">키워드 기반 최신순 검색</span>
-    </div>
-    """, unsafe_allow_html=True)
+with main_col:
+    # ─────────────────────────────────────────────
+    # 화면 0: 대시보드
+    # ─────────────────────────────────────────────
+    if app_mode == "🧭 대시보드":
+        _render_overview_dashboard()
 
-    col_inp, col_btn, col_opt, col_debug = st.columns([4, 1, 1, 1])
-    with col_inp:
-        keyword = st.text_input("키워드", value=st.session_state.keyword_naver, placeholder="검색할 키워드 (예: 인공지능, 기후변화...)", label_visibility="collapsed")
-    with col_btn:
-        search_clicked = st.button("검색", use_container_width=True, key="btn_naver")
-    with col_opt:
-        max_results = st.selectbox("수집 건수", [5, 10, 15, 20, 30], index=1, label_visibility="visible", key="max_naver")
-    with col_debug:
-        debug_mode = st.checkbox("🔧 디버그", value=False, key="dbg_naver")
+    # ─────────────────────────────────────────────
+    # 화면 1: 네이버 뉴스 검색
+    # ─────────────────────────────────────────────
+    elif app_mode == "🔍 네이버 뉴스 검색":
+        st.markdown("""
+        <div class="header-wrap">
+            <span class="header-logo">📰 네이버 뉴스 스크래퍼</span>
+            <span class="header-sub">키워드 기반 최신순 검색</span>
+        </div>
+        """, unsafe_allow_html=True)
 
-    if search_clicked and keyword.strip():
-        st.session_state.keyword_naver = keyword.strip()
-        st.session_state.articles_naver = []
+        col_inp, col_btn, col_opt, col_debug = st.columns([4, 1, 1, 1])
+        with col_inp:
+            keyword = st.text_input("키워드", value=st.session_state.keyword_naver, placeholder="검색할 키워드 (예: 인공지능, 기후변화...)", label_visibility="collapsed")
+        with col_btn:
+            search_clicked = st.button("검색", use_container_width=True, key="btn_naver")
+        with col_opt:
+            max_results = st.selectbox("수집 건수", [5, 10, 15, 20, 30], index=1, label_visibility="visible", key="max_naver")
+        with col_debug:
+            debug_mode = st.checkbox("🔧 디버그", value=False, key="dbg_naver")
 
-        import io as _io, contextlib
-        status_box = st.empty()
-        prog_bar   = st.progress(0)
-        status_box.markdown(f"🔍 **'{html.escape(keyword)}'** 검색 중...")
-
-        try:
-            log_buf = _io.StringIO()
-            with contextlib.redirect_stdout(log_buf):
-                arts_list = search_naver_news(keyword.strip(), max_results=max_results, debug=debug_mode)
-            st.session_state.debug_log = log_buf.getvalue()
-
-            if not arts_list:
-                status_box.empty(); prog_bar.empty()
-                st.warning("⚠️ 검색 결과 0건")
-            else:
-                total = len(arts_list)
-
-                def on_progress(done, total_, art):
-                    prog_bar.progress(int(done / total_ * 100))
-                    title_preview = html.escape((art.get("title", "") if art else "")[:40])
-                    status_box.markdown(f"📄 기사 수집 중 **{done}/{total_}** — {title_preview}...")
-
-                enrich_articles_parallel(arts_list, progress_cb=on_progress)
-
-                st.session_state.articles_naver = arts_list
-                saved = NEWS_REPOSITORY.save_articles_batch("naver", arts_list, keyword=keyword.strip())
-                status_box.empty(); prog_bar.empty()
-                st.success(f"✅ 네이버 뉴스 **{total}건** 수집 완료!")
-                if saved:
-                    st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
-        except Exception as e:
-            status_box.empty(); prog_bar.empty()
-            st.error(f"❌ 오류 발생: {e}")
-
-    if st.session_state.articles_naver:
-        render_results(st.session_state.articles_naver, st.session_state.keyword_naver, "naver", mode="naver")
-        if debug_mode: _show_debug()
-    else:
-        st.markdown("""<div style="margin-top:4rem;text-align:center;color:var(--text-3);">
-            <div style="font-size:3rem;margin-bottom:1rem;">🔎</div>
-            <div>키워드를 입력하고 검색 버튼을 눌러주세요.</div>
-        </div>""", unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────
-# 화면 2: 최신 기술 동향 (사이트 선택형 탭 분리)
-# ─────────────────────────────────────────────
-elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
-    st.markdown("""
-    <div class="header-wrap">
-        <span class="header-logo">🚀 최신 기술 동향 스크래퍼</span>
-        <span class="header-sub">특정 사이트 메인 기사 집중 수집</span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ✅ 스크래핑할 사이트 목록을 체크박스로 선택할 수 있도록 UI 추가
-    selected_site_names = st.multiselect(
-        "📰 수집할 사이트 선택",
-        options=list(TARGET_SITES.keys()),
-        default=list(TARGET_SITES.keys()),
-        help="향후 코드 상단 TARGET_SITES 변수에 URL만 추가하면 이 목록에 자동으로 나타납니다."
-    )
-
-    col1, col2, col3 = st.columns([1, 3, 1])
-    with col1:
-        tech_max_results = st.selectbox("수집 건수 (각 사이트당)", [5, 10, 15, 20], index=1, key="max_tech")
-    with col3:
-        tech_debug = st.checkbox("🔧 디버그", value=False, key="dbg_tech")
-
-    st.markdown("버튼을 누르면 위에서 선택된 사이트들의 홈페이지 메인에 노출된 최신 기사들을 자동으로 수집하고 탭으로 분류합니다.")
-    fetch_tech_clicked = st.button("🔄 최신 기사 일괄 수집하기", use_container_width=True)
-
-    if fetch_tech_clicked:
-        if not selected_site_names:
-            st.error("수집할 사이트를 최소 1개 이상 선택해주세요.")
-        else:
-            st.session_state.articles_tech = []
-            collected = []
-
-            status_box = st.empty()
-            prog_bar   = st.progress(0)
-
-            active_targets = [(name, TARGET_SITES[name]) for name in selected_site_names]
-            num_sites = len(active_targets)
-            weight_per_site = 100 / num_sites
+        if search_clicked and keyword.strip():
+            st.session_state.keyword_naver = keyword.strip()
+            st.session_state.articles_naver = []
 
             import io as _io, contextlib
-            log_buf = _io.StringIO()
+            status_box = st.empty()
+            prog_bar   = st.progress(0)
+            status_box.markdown(f"🔍 **'{html.escape(keyword)}'** 검색 중...")
 
             try:
-                for site_idx, (site_name, site_url) in enumerate(active_targets):
-                    status_box.markdown(f"🌐 **{html.escape(site_name)}** 메인 페이지 접속 중...")
-
-                    with contextlib.redirect_stdout(log_buf):
-                        raw_arts = fetch_latest_tech_news(site_name, site_url, max_results=tech_max_results, debug=tech_debug)
-                    total = len(raw_arts)
-
-                    if total == 0:
-                        # 빈 사이트라도 진행률은 전진
-                        prog_bar.progress(int((site_idx + 1) * weight_per_site))
-                        status_box.markdown(f"⚠️ **{html.escape(site_name)}** 기사 없음 — 다음 사이트로 진행")
-                        continue
-
-                    def on_progress(done, total_, art, _site_idx=site_idx, _site_name=site_name):
-                        progress = int((_site_idx * weight_per_site) + ((done / total_) * weight_per_site))
-                        prog_bar.progress(min(progress, 100))
-                        title_preview = html.escape((art.get("title", "") if art else "")[:30])
-                        status_box.markdown(f"📄 **{html.escape(_site_name)}** 기사 수집 중 **{done}/{total_}** — {title_preview}...")
-
-                    enrich_articles_parallel(raw_arts, progress_cb=on_progress)
-                    collected.extend(raw_arts)
-
-                st.session_state.articles_tech = collected
-                saved = NEWS_REPOSITORY.save_articles_batch("tech", collected, keyword="selected_portals")
+                log_buf = _io.StringIO()
+                with contextlib.redirect_stdout(log_buf):
+                    arts_list = search_naver_news(keyword.strip(), max_results=max_results, debug=debug_mode)
                 st.session_state.debug_log = log_buf.getvalue()
-                status_box.empty(); prog_bar.empty()
-                if collected:
-                    st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+
+                if not arts_list:
+                    status_box.empty(); prog_bar.empty()
+                    st.warning("⚠️ 검색 결과 0건")
+                else:
+                    total = len(arts_list)
+
+                    def on_progress(done, total_, art):
+                        prog_bar.progress(int(done / total_ * 100))
+                        title_preview = html.escape((art.get("title", "") if art else "")[:40])
+                        status_box.markdown(f"📄 기사 수집 중 **{done}/{total_}** — {title_preview}...")
+
+                    enrich_articles_parallel(arts_list, progress_cb=on_progress)
+
+                    st.session_state.articles_naver = arts_list
+                    saved = NEWS_REPOSITORY.save_articles_batch("naver", arts_list, keyword=keyword.strip())
+                    status_box.empty(); prog_bar.empty()
+                    st.success(f"✅ 네이버 뉴스 **{total}건** 수집 완료!")
                     if saved:
                         st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
-                else:
-                    st.warning("⚠️ 수집된 기사가 0건입니다. 디버그 체크박스를 켜고 다시 시도해 원인을 확인해보세요.")
-
-                st.session_state.articles_tech = collected
-                saved = NEWS_REPOSITORY.save_articles_batch("tech", collected, keyword="selected_portals")
-                st.session_state.debug_log = log_buf.getvalue()
-                status_box.empty(); prog_bar.empty()
-                if collected:
-                    st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
-                    if saved:
-                        st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
-                else:
-                    st.warning("⚠️ 수집된 기사가 0건입니다. 디버그 체크박스를 켜고 다시 시도해 원인을 확인해보세요.")
-
             except Exception as e:
-                st.session_state.debug_log = log_buf.getvalue()
                 status_box.empty(); prog_bar.empty()
-                st.error(f"❌ 수집 중 오류 발생: {e}")
+                st.error(f"❌ 오류 발생: {e}")
 
-    # 결과 출력 (mode="tech"를 넘겨주면 탭이 자동으로 나뉨)
-    if st.session_state.articles_tech:
-        render_results(st.session_state.articles_tech, "선택 사이트 최신 기사", "tech", mode="tech")
-        if tech_debug: _show_debug()
-    elif tech_debug and st.session_state.debug_log:
-        _show_debug()
-    else:
-        st.markdown("""<div style="margin-top:4rem;text-align:center;color:var(--text-3);">
-            <div style="font-size:3rem;margin-bottom:1rem;">🤖</div>
-            <div>원하는 사이트를 선택하고 [최신 기사 일괄 수집하기] 버튼을 눌러 트렌드를 파악해보세요.</div>
-        </div>""", unsafe_allow_html=True)
+        if st.session_state.articles_naver:
+            render_results(st.session_state.articles_naver, st.session_state.keyword_naver, "naver", mode="naver")
+            if debug_mode: _show_debug()
+        else:
+            st.markdown("""<div style="margin-top:4rem;text-align:center;color:var(--text-3);">
+                <div style="font-size:3rem;margin-bottom:1rem;">🔎</div>
+                <div>키워드를 입력하고 검색 버튼을 눌러주세요.</div>
+            </div>""", unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────
-# 화면 3: 인사이트 보드 (스켈레톤)
-# ─────────────────────────────────────────────
-elif app_mode == "📊 인사이트 보드":
-    st.markdown("""
-    <div class="header-wrap">
-        <span class="header-logo">📊 인사이트 보드</span>
-        <span class="header-sub">수집 기사 집계 · 트렌드 · 언론사 랭킹</span>
-    </div>
-    """, unsafe_allow_html=True)
+    # ─────────────────────────────────────────────
+    # 화면 2: 최신 기술 동향 (사이트 선택형 탭 분리)
+    # ─────────────────────────────────────────────
+    elif app_mode == "🚀 최신 기술 동향 (AI/자동화)":
+        st.markdown("""
+        <div class="header-wrap">
+            <span class="header-logo">🚀 최신 기술 동향 스크래퍼</span>
+            <span class="header-sub">특정 사이트 메인 기사 집중 수집</span>
+        </div>
+        """, unsafe_allow_html=True)
 
-    pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
-    if not pool:
-        st.info("먼저 [네이버 뉴스 검색] 또는 [최신 기술 동향] 탭에서 기사를 수집하세요.")
-    else:
-        st.caption(f"분석 대상: 총 **{len(pool)}건**")
-        c1, c2 = st.columns(2)
-        with c1:
-            st.subheader("언론사별 기사 수")
-            st.bar_chart(insights.by_press(pool), x="press", y="count", use_container_width=True)
-        with c2:
-            st.subheader("키워드 빈도 Top 20")
-            st.bar_chart(insights.by_keyword(pool, top_n=20), x="keyword", y="count", use_container_width=True)
-        st.subheader("일자별 기사 수")
-        st.bar_chart(insights.trend_by_date(pool), x="date", y="count", use_container_width=True)
+        # ✅ 스크래핑할 사이트 목록을 체크박스로 선택할 수 있도록 UI 추가
+        selected_site_names = st.multiselect(
+            "📰 수집할 사이트 선택",
+            options=list(TARGET_SITES.keys()),
+            default=list(TARGET_SITES.keys()),
+            help="향후 코드 상단 TARGET_SITES 변수에 URL만 추가하면 이 목록에 자동으로 나타납니다."
+        )
 
-# ─────────────────────────────────────────────
-# 화면 4: 조선소 작업 데이터 (Phase 1)
-# ─────────────────────────────────────────────
-elif app_mode == "🏭 조선소 작업 데이터":
-    st.markdown("""
-    <div class="header-wrap">
-        <span class="header-logo">🏭 조선소 작업 데이터</span>
-        <span class="header-sub">엑셀 업로드 · 검증 · Parquet 저장</span>
-    </div>
-    """, unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 3, 1])
+        with col1:
+            tech_max_results = st.selectbox("수집 건수 (각 사이트당)", [5, 10, 15, 20], index=1, key="max_tech")
+        with col3:
+            tech_debug = st.checkbox("🔧 디버그", value=False, key="dbg_tech")
 
-    st.caption("필수 컬럼: " + ", ".join(REQUIRED_COLUMNS))
-    uploaded = st.file_uploader(
-        "작업 데이터 엑셀(.xlsx)을 업로드하세요.",
-        type=["xlsx"],
-        accept_multiple_files=False,
-    )
+        st.markdown("버튼을 누르면 위에서 선택된 사이트들의 홈페이지 메인에 노출된 최신 기사들을 자동으로 수집하고 탭으로 분류합니다.")
+        fetch_tech_clicked = st.button("🔄 최신 기사 일괄 수집하기", use_container_width=True)
 
-    if uploaded is not None:
-        if st.button("업로드 처리 시작", use_container_width=True):
-            result = ingest_shipyard_excel(uploaded.name, uploaded)
-            if result.is_valid:
-                st.success(f"✅ 업로드 성공: {result.row_count}행")
-                st.caption(f"raw 저장: {result.raw_path}")
-                st.caption(f"parquet 저장: {result.parquet_path}")
+        if fetch_tech_clicked:
+            if not selected_site_names:
+                st.error("수집할 사이트를 최소 1개 이상 선택해주세요.")
             else:
-                st.error("❌ 검증 실패")
-                for err in result.errors:
-                    st.warning(f"- {err}")
-                if result.raw_path:
-                    st.caption(f"raw 저장: {result.raw_path}")
+                st.session_state.articles_tech = []
+                collected = []
 
-# ─────────────────────────────────────────────
-# 화면 5: 자동화 과제 제안 (Phase 1)
-# ─────────────────────────────────────────────
-elif app_mode == "🤝 자동화 과제 제안":
-    st.markdown("""
-    <div class="header-wrap">
-        <span class="header-logo">🤝 자동화 과제 제안</span>
-        <span class="header-sub">작업 데이터 × 뉴스 매칭 기반 제안</span>
-    </div>
-    """, unsafe_allow_html=True)
+                status_box = st.empty()
+                prog_bar   = st.progress(0)
 
-    tasks_df = load_latest_shipyard_tasks()
-    news_pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
+                active_targets = [(name, TARGET_SITES[name]) for name in selected_site_names]
+                num_sites = len(active_targets)
+                weight_per_site = 100 / num_sites
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.metric("작업 데이터", f"{len(tasks_df)}건")
-    with c2:
-        st.metric("뉴스 풀", f"{len(news_pool)}건")
+                import io as _io, contextlib
+                log_buf = _io.StringIO()
 
-    if tasks_df.empty:
-        st.info("먼저 [🏭 조선소 작업 데이터]에서 엑셀 업로드를 완료하세요.")
-    elif not news_pool:
-        st.info("먼저 [🔍 네이버 뉴스 검색] 또는 [🚀 최신 기술 동향]에서 뉴스를 수집하세요.")
-    else:
-        top_k = st.slider("작업별 추천 기사 수", min_value=1, max_value=5, value=3)
-        if st.button("제안 생성", use_container_width=True):
-            proposals = suggest_for_tasks(tasks_df, news_pool, top_k=top_k)
-            st.session_state.proposal_results = proposals
-            st.session_state.proposal_artifacts = save_proposals_artifacts(proposals)
+                try:
+                    for site_idx, (site_name, site_url) in enumerate(active_targets):
+                        status_box.markdown(f"🌐 **{html.escape(site_name)}** 메인 페이지 접속 중...")
 
-        proposals = st.session_state.proposal_results
-        if proposals:
-            rows = [
-                {
-                    "task_id": p["task_id"],
-                    "task_name": p["task_name"],
-                    "process": p["process"],
-                    "추천기사수": p["recommendation_count"],
-                }
-                for p in proposals
-            ]
-            st.subheader("제안 요약")
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, height=320)
+                        with contextlib.redirect_stdout(log_buf):
+                            raw_arts = fetch_latest_tech_news(site_name, site_url, max_results=tech_max_results, debug=tech_debug)
+                        total = len(raw_arts)
 
-            markdown_text = proposals_to_markdown(proposals)
-            json_text = json.dumps(proposals, ensure_ascii=False, indent=2)
+                        if total == 0:
+                            # 빈 사이트라도 진행률은 전진
+                            prog_bar.progress(int((site_idx + 1) * weight_per_site))
+                            status_box.markdown(f"⚠️ **{html.escape(site_name)}** 기사 없음 — 다음 사이트로 진행")
+                            continue
+
+                        def on_progress(done, total_, art, _site_idx=site_idx, _site_name=site_name):
+                            progress = int((_site_idx * weight_per_site) + ((done / total_) * weight_per_site))
+                            prog_bar.progress(min(progress, 100))
+                            title_preview = html.escape((art.get("title", "") if art else "")[:30])
+                            status_box.markdown(f"📄 **{html.escape(_site_name)}** 기사 수집 중 **{done}/{total_}** — {title_preview}...")
+
+                        enrich_articles_parallel(raw_arts, progress_cb=on_progress)
+                        collected.extend(raw_arts)
+
+                    st.session_state.articles_tech = collected
+                    saved = NEWS_REPOSITORY.save_articles_batch("tech", collected, keyword="selected_portals")
+                    st.session_state.debug_log = log_buf.getvalue()
+                    status_box.empty(); prog_bar.empty()
+                    if collected:
+                        st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+                        if saved:
+                            st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
+                    else:
+                        st.warning("⚠️ 수집된 기사가 0건입니다. 디버그 체크박스를 켜고 다시 시도해 원인을 확인해보세요.")
+
+                    st.session_state.articles_tech = collected
+                    saved = NEWS_REPOSITORY.save_articles_batch("tech", collected, keyword="selected_portals")
+                    st.session_state.debug_log = log_buf.getvalue()
+                    status_box.empty(); prog_bar.empty()
+                    if collected:
+                        st.success(f"✅ 선택된 사이트 기사 총 **{len(collected)}건** 수집 완료!")
+                        if saved:
+                            st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
+                    else:
+                        st.warning("⚠️ 수집된 기사가 0건입니다. 디버그 체크박스를 켜고 다시 시도해 원인을 확인해보세요.")
+
+                except Exception as e:
+                    st.session_state.debug_log = log_buf.getvalue()
+                    status_box.empty(); prog_bar.empty()
+                    st.error(f"❌ 수집 중 오류 발생: {e}")
+
+        # 결과 출력 (mode="tech"를 넘겨주면 탭이 자동으로 나뉨)
+        if st.session_state.articles_tech:
+            render_results(st.session_state.articles_tech, "선택 사이트 최신 기사", "tech", mode="tech")
+            if tech_debug: _show_debug()
+        elif tech_debug and st.session_state.debug_log:
+            _show_debug()
+        else:
+            st.markdown("""<div style="margin-top:4rem;text-align:center;color:var(--text-3);">
+                <div style="font-size:3rem;margin-bottom:1rem;">🤖</div>
+                <div>원하는 사이트를 선택하고 [최신 기사 일괄 수집하기] 버튼을 눌러 트렌드를 파악해보세요.</div>
+            </div>""", unsafe_allow_html=True)
+
+    # ─────────────────────────────────────────────
+    # 화면 3: 인사이트 보드 (스켈레톤)
+    # ─────────────────────────────────────────────
+    elif app_mode == "📊 인사이트 보드":
+        st.markdown("""
+        <div class="header-wrap">
+            <span class="header-logo">📊 인사이트 보드</span>
+            <span class="header-sub">수집 기사 집계 · 트렌드 · 언론사 랭킹</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
+        if not pool:
+            st.info("먼저 [네이버 뉴스 검색] 또는 [최신 기술 동향] 탭에서 기사를 수집하세요.")
+        else:
+            st.caption(f"분석 대상: 총 **{len(pool)}건**")
             c1, c2 = st.columns(2)
             with c1:
-                st.download_button(
-                    "⬇ 제안서 Markdown 다운로드",
-                    data=markdown_text.encode("utf-8"),
-                    file_name="automation_proposals.md",
-                    mime="text/markdown",
-                )
+                st.subheader("언론사별 기사 수")
+                st.bar_chart(insights.by_press(pool), x="press", y="count", use_container_width=True)
             with c2:
-                st.download_button(
-                    "⬇ 제안서 JSON 다운로드",
-                    data=json_text.encode("utf-8"),
-                    file_name="automation_proposals.json",
-                    mime="application/json",
-                )
-            if st.session_state.proposal_artifacts:
-                st.caption(f"artifact(json): {st.session_state.proposal_artifacts.get('json', '')}")
-                st.caption(f"artifact(md): {st.session_state.proposal_artifacts.get('markdown', '')}")
+                st.subheader("키워드 빈도 Top 20")
+                st.bar_chart(insights.by_keyword(pool, top_n=20), x="keyword", y="count", use_container_width=True)
+            st.subheader("일자별 기사 수")
+            st.bar_chart(insights.trend_by_date(pool), x="date", y="count", use_container_width=True)
 
-            st.subheader("작업별 상세 추천")
-            for p in proposals:
-                with st.expander(f"{p['task_id']} · {p['task_name']} ({p['process']})", expanded=False):
-                    if not p["recommendations"]:
-                        st.caption("추천 가능한 기사가 없습니다.")
-                        continue
-                    for idx, rec in enumerate(p["recommendations"], start=1):
-                        st.markdown(
-                            f"{idx}. **{html.escape(rec['title'])}** "
-                            f"(score={rec['score']}, overlap={', '.join(rec['overlap_terms'])})"
-                        )
-                        if rec.get("link", "").startswith(("http://", "https://")):
-                            st.markdown(f"- 원문: {rec['link']}")
-                        if rec.get("summary"):
-                            st.caption(rec["summary"])
+    # ─────────────────────────────────────────────
+    # 화면 4: 조선소 작업 데이터 (Phase 1)
+    # ─────────────────────────────────────────────
+    elif app_mode == "🏭 조선소 작업 데이터":
+        st.markdown("""
+        <div class="header-wrap">
+            <span class="header-logo">🏭 조선소 작업 데이터</span>
+            <span class="header-sub">엑셀 업로드 · 검증 · Parquet 저장</span>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────
-# 화면 6: 카드뉴스 (스켈레톤)
-# ─────────────────────────────────────────────
-elif app_mode == "🎨 카드뉴스":
-    st.markdown("""
-    <div class="header-wrap">
-        <span class="header-logo">🎨 카드뉴스</span>
-        <span class="header-sub">슬라이드형 카드 뷰어 · 키보드 탐색 · 자동 재생</span>
-    </div>
-    """, unsafe_allow_html=True)
+        st.caption("필수 컬럼: " + ", ".join(REQUIRED_COLUMNS))
+        uploaded = st.file_uploader(
+            "작업 데이터 엑셀(.xlsx)을 업로드하세요.",
+            type=["xlsx"],
+            accept_multiple_files=False,
+        )
 
-    pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
-    if not pool:
-        st.info("먼저 [네이버 뉴스 검색] 또는 [최신 기술 동향] 탭에서 기사를 수집하세요.")
-    else:
-        c1, c2 = st.columns([1, 2])
+        if uploaded is not None:
+            if st.button("업로드 처리 시작", use_container_width=True):
+                result = ingest_shipyard_excel(uploaded.name, uploaded)
+                if result.is_valid:
+                    st.success(f"✅ 업로드 성공: {result.row_count}행")
+                    st.caption(f"raw 저장: {result.raw_path}")
+                    st.caption(f"parquet 저장: {result.parquet_path}")
+                else:
+                    st.error("❌ 검증 실패")
+                    for err in result.errors:
+                        st.warning(f"- {err}")
+                    if result.raw_path:
+                        st.caption(f"raw 저장: {result.raw_path}")
+
+    # ─────────────────────────────────────────────
+    # 화면 5: 자동화 과제 제안 (Phase 1)
+    # ─────────────────────────────────────────────
+    elif app_mode == "🤝 자동화 과제 제안":
+        st.markdown("""
+        <div class="header-wrap">
+            <span class="header-logo">🤝 자동화 과제 제안</span>
+            <span class="header-sub">작업 데이터 × 뉴스 매칭 기반 제안</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        tasks_df = load_latest_shipyard_tasks()
+        news_pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
+
+        c1, c2 = st.columns(2)
         with c1:
-            autoplay_sec = st.slider("자동 넘김(초)", min_value=2, max_value=20, value=6)
+            st.metric("작업 데이터", f"{len(tasks_df)}건")
         with c2:
-            st.caption("조작: **← / →**, **Space**(다음), 버튼(이전/다음), 자동 넘김")
+            st.metric("뉴스 풀", f"{len(news_pool)}건")
 
-        cards = []
-        for i, article in enumerate(pool, start=1):
-            cards.append({
-                "no": i,
-                "title": article.get("title", "제목 없음"),
-                "press": article.get("press", ""),
-                "date": article.get("date", ""),
-                "summary": article.get("summary", ""),
-                "content": article.get("content", ""),
-                "keywords": article.get("keywords", ""),
-                "img_url": article.get("img_url", ""),
-                "link": article.get("link", "#"),
-            })
+        if tasks_df.empty:
+            st.info("먼저 [🏭 조선소 작업 데이터]에서 엑셀 업로드를 완료하세요.")
+        elif not news_pool:
+            st.info("먼저 [🔍 네이버 뉴스 검색] 또는 [🚀 최신 기술 동향]에서 뉴스를 수집하세요.")
+        else:
+            top_k = st.slider("작업별 추천 기사 수", min_value=1, max_value=5, value=3)
+            if st.button("제안 생성", use_container_width=True):
+                proposals = suggest_for_tasks(tasks_df, news_pool, top_k=top_k)
+                st.session_state.proposal_results = proposals
+                st.session_state.proposal_artifacts = save_proposals_artifacts(proposals)
 
-        payload = json.dumps(cards, ensure_ascii=False)
-        html_block = f"""
-        <div id="cn-root"></div>
-        <script>
-        const cards = {payload};
-        const autoplayMs = {int(autoplay_sec * 1000)};
-        let idx = 0;
-        let timer = null;
+            proposals = st.session_state.proposal_results
+            if proposals:
+                rows = [
+                    {
+                        "task_id": p["task_id"],
+                        "task_name": p["task_name"],
+                        "process": p["process"],
+                        "추천기사수": p["recommendation_count"],
+                    }
+                    for p in proposals
+                ]
+                st.subheader("제안 요약")
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, height=320)
 
-        function esc(s) {{
-          return String(s || '').replace(/[&<>"']/g, m => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[m]));
-        }}
-        function bodyText(card) {{
-          const base = (card.content && card.content.length > 50) ? card.content : card.summary;
-          return (base || '본문 내용 없음').slice(0, 320);
-        }}
+                markdown_text = proposals_to_markdown(proposals)
+                json_text = json.dumps(proposals, ensure_ascii=False, indent=2)
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.download_button(
+                        "⬇ 제안서 Markdown 다운로드",
+                        data=markdown_text.encode("utf-8"),
+                        file_name="automation_proposals.md",
+                        mime="text/markdown",
+                    )
+                with c2:
+                    st.download_button(
+                        "⬇ 제안서 JSON 다운로드",
+                        data=json_text.encode("utf-8"),
+                        file_name="automation_proposals.json",
+                        mime="application/json",
+                    )
+                if st.session_state.proposal_artifacts:
+                    st.caption(f"artifact(json): {st.session_state.proposal_artifacts.get('json', '')}")
+                    st.caption(f"artifact(md): {st.session_state.proposal_artifacts.get('markdown', '')}")
 
-        function render() {{
-          const c = cards[idx] || {{}};
-          const kws = (c.keywords || '').split(',').map(k => k.trim()).filter(Boolean)
-            .map(k => `<span style="background:#F1F5F9;padding:4px 8px;border-radius:6px;font-size:12px;">#${{esc(k)}}</span>`).join(' ');
-          const img = (c.img_url || '').startsWith('http')
-            ? `<img src="${{esc(c.img_url)}}" style="width:100%;max-height:320px;object-fit:cover;border-radius:10px;border:1px solid #E2E8F0;"/>`
-            : `<div style="height:220px;display:flex;align-items:center;justify-content:center;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;color:#94A3B8;">No Image</div>`;
+                st.subheader("작업별 상세 추천")
+                for p in proposals:
+                    with st.expander(f"{p['task_id']} · {p['task_name']} ({p['process']})", expanded=False):
+                        if not p["recommendations"]:
+                            st.caption("추천 가능한 기사가 없습니다.")
+                            continue
+                        for idx, rec in enumerate(p["recommendations"], start=1):
+                            st.markdown(
+                                f"{idx}. **{html.escape(rec['title'])}** "
+                                f"(score={rec['score']}, overlap={', '.join(rec['overlap_terms'])})"
+                            )
+                            if rec.get("link", "").startswith(("http://", "https://")):
+                                st.markdown(f"- 원문: {rec['link']}")
+                            if rec.get("summary"):
+                                st.caption(rec["summary"])
 
-          document.getElementById('cn-root').innerHTML = `
-            <div style="border:1px solid #E2E8F0;border-radius:14px;padding:16px;background:white;">
-              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                <div><strong>${{idx+1}} / ${{cards.length}}</strong></div>
-                <div>
-                  <button id="prev-btn" style="margin-right:8px;padding:6px 12px;">◀ 이전</button>
-                  <button id="next-btn" style="padding:6px 12px;">다음 ▶</button>
-                </div>
-              </div>
-              ${{img}}
-              <h3 style="margin:12px 0 6px 0;">${{esc(c.title || '제목 없음')}}</h3>
-              <div style="color:#64748B;font-size:13px;margin-bottom:8px;">${{esc(c.press || '')}} · ${{esc(c.date || '')}} · #${{esc(c.no || '')}}</div>
-              <div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;">${{kws}}</div>
-              <p style="line-height:1.6;color:#334155;">${{esc(bodyText(c))}}</p>
-              <a href="${{esc((c.link || '').startsWith('http') ? c.link : '#')}}" target="_blank" rel="noopener noreferrer">원문 보기 →</a>
-            </div>`;
+    # ─────────────────────────────────────────────
+    # 화면 6: 카드뉴스 (스켈레톤)
+    # ─────────────────────────────────────────────
+    elif app_mode == "🎨 카드뉴스":
+        st.markdown("""
+        <div class="header-wrap">
+            <span class="header-logo">🎨 카드뉴스</span>
+            <span class="header-sub">슬라이드형 카드 뷰어 · 키보드 탐색 · 자동 재생</span>
+        </div>
+        """, unsafe_allow_html=True)
 
-          document.getElementById('prev-btn').onclick = () => goPrev();
-          document.getElementById('next-btn').onclick = () => goNext();
-        }}
+        pool = list(st.session_state.articles_naver) + list(st.session_state.articles_tech)
+        if not pool:
+            st.info("먼저 [네이버 뉴스 검색] 또는 [최신 기술 동향] 탭에서 기사를 수집하세요.")
+        else:
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                autoplay_sec = st.slider("자동 넘김(초)", min_value=2, max_value=20, value=6)
+            with c2:
+                st.caption("조작: **← / →**, **Space**(다음), 버튼(이전/다음), 자동 넘김")
 
-        function goNext() {{ idx = (idx + 1) % cards.length; render(); }}
-        function goPrev() {{ idx = (idx - 1 + cards.length) % cards.length; render(); }}
-        function resetAutoplay() {{
-          if (timer) clearInterval(timer);
-          timer = setInterval(goNext, autoplayMs);
-        }}
+            cards = []
+            for i, article in enumerate(pool, start=1):
+                cards.append({
+                    "no": i,
+                    "title": article.get("title", "제목 없음"),
+                    "press": article.get("press", ""),
+                    "date": article.get("date", ""),
+                    "summary": article.get("summary", ""),
+                    "content": article.get("content", ""),
+                    "keywords": article.get("keywords", ""),
+                    "img_url": article.get("img_url", ""),
+                    "link": article.get("link", "#"),
+                })
 
-        window.addEventListener('keydown', (e) => {{
-          if (e.key === 'ArrowRight' || e.key === ' ') {{ e.preventDefault(); goNext(); resetAutoplay(); }}
-          if (e.key === 'ArrowLeft') {{ e.preventDefault(); goPrev(); resetAutoplay(); }}
-        }});
+            payload = json.dumps(cards, ensure_ascii=False)
+            html_block = f"""
+            <div id="cn-root"></div>
+            <script>
+            const cards = {payload};
+            const autoplayMs = {int(autoplay_sec * 1000)};
+            let idx = 0;
+            let timer = null;
 
-        render();
-        resetAutoplay();
-        </script>
-        """
-        components.html(html_block, height=760, scrolling=False)
+            function esc(s) {{
+              return String(s || '').replace(/[&<>"']/g, m => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}}[m]));
+            }}
+            function bodyText(card) {{
+              const base = (card.content && card.content.length > 50) ? card.content : card.summary;
+              return (base || '본문 내용 없음').slice(0, 320);
+            }}
+
+            function render() {{
+              const c = cards[idx] || {{}};
+              const kws = (c.keywords || '').split(',').map(k => k.trim()).filter(Boolean)
+                .map(k => `<span style="background:#F1F5F9;padding:4px 8px;border-radius:6px;font-size:12px;">#${{esc(k)}}</span>`).join(' ');
+              const img = (c.img_url || '').startsWith('http')
+                ? `<img src="${{esc(c.img_url)}}" style="width:100%;max-height:320px;object-fit:cover;border-radius:10px;border:1px solid #E2E8F0;"/>`
+                : `<div style="height:220px;display:flex;align-items:center;justify-content:center;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:10px;color:#94A3B8;">No Image</div>`;
+
+              document.getElementById('cn-root').innerHTML = `
+                <div style="border:1px solid #E2E8F0;border-radius:14px;padding:16px;background:white;">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <div><strong>${{idx+1}} / ${{cards.length}}</strong></div>
+                    <div>
+                      <button id="prev-btn" style="margin-right:8px;padding:6px 12px;">◀ 이전</button>
+                      <button id="next-btn" style="padding:6px 12px;">다음 ▶</button>
+                    </div>
+                  </div>
+                  ${{img}}
+                  <h3 style="margin:12px 0 6px 0;">${{esc(c.title || '제목 없음')}}</h3>
+                  <div style="color:#64748B;font-size:13px;margin-bottom:8px;">${{esc(c.press || '')}} · ${{esc(c.date || '')}} · #${{esc(c.no || '')}}</div>
+                  <div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;">${{kws}}</div>
+                  <p style="line-height:1.6;color:#334155;">${{esc(bodyText(c))}}</p>
+                  <a href="${{esc((c.link || '').startsWith('http') ? c.link : '#')}}" target="_blank" rel="noopener noreferrer">원문 보기 →</a>
+                </div>`;
+
+              document.getElementById('prev-btn').onclick = () => goPrev();
+              document.getElementById('next-btn').onclick = () => goNext();
+            }}
+
+            function goNext() {{ idx = (idx + 1) % cards.length; render(); }}
+            function goPrev() {{ idx = (idx - 1 + cards.length) % cards.length; render(); }}
+            function resetAutoplay() {{
+              if (timer) clearInterval(timer);
+              timer = setInterval(goNext, autoplayMs);
+            }}
+
+            window.addEventListener('keydown', (e) => {{
+              if (e.key === 'ArrowRight' || e.key === ' ') {{ e.preventDefault(); goNext(); resetAutoplay(); }}
+              if (e.key === 'ArrowLeft') {{ e.preventDefault(); goPrev(); resetAutoplay(); }}
+            }});
+
+            render();
+            resetAutoplay();
+            </script>
+            """
+            components.html(html_block, height=760, scrolling=False)
+
+with chat_col:
+    _render_llm_chat_panel(app_mode)
