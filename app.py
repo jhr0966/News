@@ -15,9 +15,6 @@ import cardnews
 from local_store import LocalNewsRepository
 from shipyard_store import ingest_shipyard_excel, REQUIRED_COLUMNS, load_latest_shipyard_tasks
 from proposal_engine import suggest_for_tasks, proposals_to_markdown, save_proposals_artifacts
-import insights
-import cardnews
-from local_store import LocalNewsRepository
 
 
 def _safe_filename(text: str, fallback: str = "news") -> str:
@@ -108,32 +105,25 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 # ─────────────────────────────────────────────
 # 세션 상태 초기화
 # ─────────────────────────────────────────────
-NEWS_REPOSITORY = LocalNewsRepository()
-bootstrap_naver = NEWS_REPOSITORY.load_latest_articles("naver")
-bootstrap_tech = NEWS_REPOSITORY.load_latest_articles("tech")
+def _init_session_state(repo: LocalNewsRepository) -> None:
+    bootstrap_naver = repo.load_latest_articles("naver")
+    bootstrap_tech = repo.load_latest_articles("tech")
 
-for k, v in [
-    ("articles_naver", bootstrap_naver),
-    ("keyword_naver", ""),
-    ("debug_log", ""),
-    ("articles_tech", bootstrap_tech),
-    ("proposal_results", []),
-    ("proposal_artifacts", {}),
-]:
-    if k not in st.session_state:
-        st.session_state[k] = v
-NEWS_REPOSITORY = LocalNewsRepository()
-bootstrap_naver = NEWS_REPOSITORY.load_latest_articles("naver")
-bootstrap_tech = NEWS_REPOSITORY.load_latest_articles("tech")
+    defaults = [
+        ("articles_naver", bootstrap_naver),
+        ("keyword_naver", ""),
+        ("debug_log", ""),
+        ("articles_tech", bootstrap_tech),
+        ("proposal_results", []),
+        ("proposal_artifacts", {}),
+    ]
+    for key, value in defaults:
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-for k, v in [
-    ("articles_naver", bootstrap_naver),
-    ("keyword_naver", ""),
-    ("debug_log", ""),
-    ("articles_tech", bootstrap_tech),
-]:
-    if k not in st.session_state:
-        st.session_state[k] = v
+
+NEWS_REPOSITORY = LocalNewsRepository()
+_init_session_state(NEWS_REPOSITORY)
 
 # ─────────────────────────────────────────────
 # 사이드바 메뉴 (화면 분리)
@@ -372,17 +362,6 @@ if app_mode == "🔍 네이버 뉴스 검색":
                     title_preview = html.escape((art.get("title", "") if art else "")[:40])
                     status_box.markdown(f"📄 기사 수집 중 **{done}/{total_}** — {title_preview}...")
 
-                enrich_articles_parallel(arts_list, progress_cb=on_progress)
-
-                st.session_state.articles_naver = arts_list
-                saved = NEWS_REPOSITORY.save_articles_batch("naver", arts_list, keyword=keyword.strip())
-                status_box.empty(); prog_bar.empty()
-                st.success(f"✅ 네이버 뉴스 **{total}건** 수집 완료!")
-                if saved:
-                    st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
-        except Exception as e:
-            status_box.empty(); prog_bar.empty()
-            st.error(f"❌ 오류 발생: {e}")
                 enrich_articles_parallel(arts_list, progress_cb=on_progress)
 
                 st.session_state.articles_naver = arts_list
