@@ -127,6 +127,9 @@ def _init_session_state(repo: LocalNewsRepository) -> None:
             "role": "",
             "main_tasks": "",
             "interest_keywords": [],
+            "avatar_emoji": "🧑‍💼",
+            "photo_bytes": None,
+            "photo_name": "",
         }),
     ]
     for key, value in defaults:
@@ -343,74 +346,21 @@ with st.sidebar:
     st.markdown("### 👤 사용자 페르소나")
     persona = st.session_state.get("persona_profile", {})
     persona_name = (persona.get("name") or "").strip()
-    persona_dept = (persona.get("department") or "").strip()
-    if persona_name:
-        st.success(f"{persona_name} ({persona_dept or '부서 미입력'})")
-        st.caption(f"직무: {persona.get('role','') or '미입력'}")
+    avatar = persona.get("avatar_emoji", "🧑‍💼")
+    has_photo = bool(persona.get("photo_bytes"))
+
+    if has_photo:
+        st.image(persona.get("photo_bytes"), width=84)
     else:
-        st.warning("아직 페르소나가 입력되지 않았습니다.")
+        st.markdown(f"""
+        <div style="width:84px;height:84px;border-radius:50%;background:#EEF3FD;display:flex;align-items:center;justify-content:center;font-size:40px;border:1px solid #D8E2FA;">{avatar}</div>
+        """, unsafe_allow_html=True)
 
-    with st.expander("페르소나 입력/수정", expanded=not bool(persona_name)):
-        department = st.text_input("부서", value=persona.get("department", ""), key="persona_department")
-        name = st.text_input("이름", value=persona.get("name", ""), key="persona_name")
-        role = st.text_input("직무", value=persona.get("role", ""), key="persona_role")
-        main_tasks = st.text_area("주요 업무", value=persona.get("main_tasks", ""), height=80, key="persona_main_tasks")
-        st.markdown("**관심 키워드**")
-        current_keywords = list(persona.get("interest_keywords", []))
-        if current_keywords:
-            st.caption("등록된 키워드: " + ", ".join(current_keywords))
-        else:
-            st.caption("등록된 키워드가 없습니다.")
-
-        kw_add_col, kw_del_col = st.columns(2)
-        with kw_add_col:
-            new_keyword = st.text_input("키워드 추가", value="", key="persona_kw_add")
-            if st.button("키워드 등록", use_container_width=True, key="add_persona_kw"):
-                kw = new_keyword.strip()
-                if kw:
-                    if kw not in current_keywords:
-                        current_keywords.append(kw)
-                        st.session_state.persona_profile["interest_keywords"] = current_keywords
-                        st.success(f"키워드 '{kw}' 등록 완료")
-                        st.rerun()
-                    else:
-                        st.info("이미 등록된 키워드입니다.")
-        with kw_del_col:
-            del_keyword = st.selectbox(
-                "키워드 삭제",
-                options=current_keywords if current_keywords else ["(없음)"],
-                key="persona_kw_del",
-            )
-            if st.button("선택 키워드 삭제", use_container_width=True, key="remove_persona_kw"):
-                if current_keywords and del_keyword in current_keywords:
-                    current_keywords.remove(del_keyword)
-                    st.session_state.persona_profile["interest_keywords"] = current_keywords
-                    st.success(f"키워드 '{del_keyword}' 삭제 완료")
-                    st.rerun()
-
-        csave, cclear = st.columns(2)
-        with csave:
-            if st.button("페르소나 저장", use_container_width=True, key="save_persona"):
-                st.session_state.persona_profile = {
-                    "department": department.strip(),
-                    "name": name.strip(),
-                    "role": role.strip(),
-                    "main_tasks": main_tasks.strip(),
-                    "interest_keywords": current_keywords,
-                }
-                st.success("페르소나가 저장되었습니다.")
-                st.rerun()
-        with cclear:
-            if st.button("초기화", use_container_width=True, key="clear_persona"):
-                st.session_state.persona_profile = {
-                    "department": "",
-                    "name": "",
-                    "role": "",
-                    "main_tasks": "",
-                    "interest_keywords": [],
-                }
-                st.success("페르소나가 초기화되었습니다.")
-                st.rerun()
+    st.markdown(f"**{persona_name or '이름 미설정'}**")
+    st.caption(f"{persona.get('department','부서 미설정')} · {persona.get('role','직무 미설정')}")
+    if st.button("페르소나 만들기", use_container_width=True, key="open_persona_editor"):
+        st.session_state.persona_editor_open = True
+        st.rerun()
 
 # ─────────────────────────────────────────────
 # 공통 UI 렌더링 함수 (재사용)
@@ -585,6 +535,56 @@ def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
 main_col, chat_col = st.columns([2.2, 1], gap="large")
 
 with main_col:
+    if st.session_state.get("persona_editor_open", False):
+        st.markdown("""
+        <div class="header-wrap">
+            <span class="header-logo">👤 페르소나 만들기</span>
+            <span class="header-sub">프로필 카드 정보 입력</span>
+        </div>
+        """, unsafe_allow_html=True)
+        persona = st.session_state.get("persona_profile", {})
+        c1, c2 = st.columns([2,1])
+        with c1:
+            department = st.text_input("부서", value=persona.get("department", ""))
+            name = st.text_input("이름", value=persona.get("name", ""))
+            role = st.text_input("직무", value=persona.get("role", ""))
+            main_tasks = st.text_area("주요 업무", value=persona.get("main_tasks", ""), height=90)
+            current_keywords = list(persona.get("interest_keywords", []))
+            kw = st.text_input("관심 키워드 추가")
+            if st.button("키워드 등록") and kw.strip() and kw.strip() not in current_keywords:
+                current_keywords.append(kw.strip())
+            if current_keywords:
+                del_kw = st.selectbox("키워드 삭제", current_keywords)
+                if st.button("선택 키워드 삭제"):
+                    current_keywords.remove(del_kw)
+            st.caption("현재 키워드: " + (", ".join(current_keywords) if current_keywords else "없음"))
+        with c2:
+            st.markdown("#### 프로필 사진")
+            emoji_options = ["🧑‍💼","👩‍💼","👨‍💼","🧑‍🔧","👩‍🔬","👨‍🔬","🧑‍🏭","👩‍💻"]
+            avatar_emoji = st.selectbox("이모지 선택", emoji_options, index=emoji_options.index(persona.get("avatar_emoji","🧑‍💼")) if persona.get("avatar_emoji","🧑‍💼") in emoji_options else 0)
+            photo_file = st.file_uploader("사진 업로드", type=["png","jpg","jpeg"], key="persona_photo")
+        s1, s2 = st.columns(2)
+        with s1:
+            if st.button("페르소나 저장", use_container_width=True):
+                photo_bytes = persona.get("photo_bytes")
+                photo_name = persona.get("photo_name","")
+                if photo_file is not None:
+                    photo_bytes = photo_file.read()
+                    photo_name = photo_file.name
+                st.session_state.persona_profile = {
+                    "department": department.strip(), "name": name.strip(), "role": role.strip(),
+                    "main_tasks": main_tasks.strip(), "interest_keywords": current_keywords,
+                    "avatar_emoji": avatar_emoji, "photo_bytes": photo_bytes, "photo_name": photo_name,
+                }
+                st.session_state.persona_editor_open = False
+                st.success("저장 완료")
+                st.rerun()
+        with s2:
+            if st.button("취소", use_container_width=True):
+                st.session_state.persona_editor_open = False
+                st.rerun()
+
+    # ─────────────────────────────────────────────
     # ─────────────────────────────────────────────
     # 화면 0: 대시보드
     # ─────────────────────────────────────────────
