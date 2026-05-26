@@ -10,6 +10,7 @@ import requests
 from dotenv import load_dotenv
 from scraper import (
     search_naver_news,
+    search_google_news,
     fetch_latest_tech_news,
     enrich_articles_parallel,
     articles_to_dataframe,
@@ -120,6 +121,13 @@ def _init_session_state(repo: LocalNewsRepository) -> None:
         ("articles_tech", bootstrap_tech),
         ("proposal_results", []),
         ("proposal_artifacts", {}),
+        ("persona_profile", {
+            "department": "",
+            "name": "",
+            "role": "",
+            "main_tasks": "",
+            "interest_keywords": [],
+        }),
     ]
     for key, value in defaults:
         if key not in st.session_state:
@@ -159,6 +167,8 @@ def _build_page_context(page_name: str) -> str:
             rows.append(f"- {i}) task_id={r.get('task_id','')} | process={r.get('process','')} | task_name={r.get('task_name','')}")
         task_preview = "\n".join(rows)
 
+    persona = st.session_state.get("persona_profile", {})
+
     proposal_results = st.session_state.get("proposal_results", [])
     proposal_preview = "- 없음"
     if proposal_results:
@@ -178,6 +188,13 @@ def _build_page_context(page_name: str) -> str:
     }
 
     blocks = [
+        "[사용자 페르소나]",
+        f"부서: {persona.get('department', '')}",
+        f"이름: {persona.get('name', '')}",
+        f"직무: {persona.get('role', '')}",
+        f"주요 업무: {persona.get('main_tasks', '')}",
+        f"관심 키워드: {', '.join(persona.get('interest_keywords', []))}",
+        "",
         "[공통 상태]",
         f"현재 화면: {page_name}",
         f"총 뉴스: {total_all}건 (네이버 {total_naver} / 기술동향 {total_tech})",
@@ -309,7 +326,7 @@ with st.sidebar:
         "작업할 기능을 선택하세요.",
         [
             "🧭 대시보드",
-            "🔍 네이버 뉴스 검색",
+            "🔍 뉴스 키워드 검색",
             "🚀 최신 기술 동향 (AI/자동화)",
             "🏭 조선소 작업 데이터",
             "🤝 자동화 과제 제안",
@@ -321,6 +338,79 @@ with st.sidebar:
     st.markdown("---")
     st.caption("💡 각 탭의 데이터는 세션 내에서 유지됩니다.")
     st.metric("현재 뉴스 풀", f"{len(st.session_state.articles_naver) + len(st.session_state.articles_tech)}건")
+
+    st.markdown("---")
+    st.markdown("### 👤 사용자 페르소나")
+    persona = st.session_state.get("persona_profile", {})
+    persona_name = (persona.get("name") or "").strip()
+    persona_dept = (persona.get("department") or "").strip()
+    if persona_name:
+        st.success(f"{persona_name} ({persona_dept or '부서 미입력'})")
+        st.caption(f"직무: {persona.get('role','') or '미입력'}")
+    else:
+        st.warning("아직 페르소나가 입력되지 않았습니다.")
+
+    with st.expander("페르소나 입력/수정", expanded=not bool(persona_name)):
+        department = st.text_input("부서", value=persona.get("department", ""), key="persona_department")
+        name = st.text_input("이름", value=persona.get("name", ""), key="persona_name")
+        role = st.text_input("직무", value=persona.get("role", ""), key="persona_role")
+        main_tasks = st.text_area("주요 업무", value=persona.get("main_tasks", ""), height=80, key="persona_main_tasks")
+        st.markdown("**관심 키워드**")
+        current_keywords = list(persona.get("interest_keywords", []))
+        if current_keywords:
+            st.caption("등록된 키워드: " + ", ".join(current_keywords))
+        else:
+            st.caption("등록된 키워드가 없습니다.")
+
+        kw_add_col, kw_del_col = st.columns(2)
+        with kw_add_col:
+            new_keyword = st.text_input("키워드 추가", value="", key="persona_kw_add")
+            if st.button("키워드 등록", use_container_width=True, key="add_persona_kw"):
+                kw = new_keyword.strip()
+                if kw:
+                    if kw not in current_keywords:
+                        current_keywords.append(kw)
+                        st.session_state.persona_profile["interest_keywords"] = current_keywords
+                        st.success(f"키워드 '{kw}' 등록 완료")
+                        st.rerun()
+                    else:
+                        st.info("이미 등록된 키워드입니다.")
+        with kw_del_col:
+            del_keyword = st.selectbox(
+                "키워드 삭제",
+                options=current_keywords if current_keywords else ["(없음)"],
+                key="persona_kw_del",
+            )
+            if st.button("선택 키워드 삭제", use_container_width=True, key="remove_persona_kw"):
+                if current_keywords and del_keyword in current_keywords:
+                    current_keywords.remove(del_keyword)
+                    st.session_state.persona_profile["interest_keywords"] = current_keywords
+                    st.success(f"키워드 '{del_keyword}' 삭제 완료")
+                    st.rerun()
+
+        csave, cclear = st.columns(2)
+        with csave:
+            if st.button("페르소나 저장", use_container_width=True, key="save_persona"):
+                st.session_state.persona_profile = {
+                    "department": department.strip(),
+                    "name": name.strip(),
+                    "role": role.strip(),
+                    "main_tasks": main_tasks.strip(),
+                    "interest_keywords": current_keywords,
+                }
+                st.success("페르소나가 저장되었습니다.")
+                st.rerun()
+        with cclear:
+            if st.button("초기화", use_container_width=True, key="clear_persona"):
+                st.session_state.persona_profile = {
+                    "department": "",
+                    "name": "",
+                    "role": "",
+                    "main_tasks": "",
+                    "interest_keywords": [],
+                }
+                st.success("페르소나가 초기화되었습니다.")
+                st.rerun()
 
 # ─────────────────────────────────────────────
 # 공통 UI 렌더링 함수 (재사용)
@@ -502,19 +592,21 @@ with main_col:
         _render_overview_dashboard()
 
     # ─────────────────────────────────────────────
-    # 화면 1: 네이버 뉴스 검색
+    # 화면 1: 뉴스 키워드 검색
     # ─────────────────────────────────────────────
-    elif app_mode == "🔍 네이버 뉴스 검색":
+    elif app_mode == "🔍 뉴스 키워드 검색":
         st.markdown("""
         <div class="header-wrap">
-            <span class="header-logo">📰 네이버 뉴스 스크래퍼</span>
-            <span class="header-sub">키워드 기반 최신순 검색</span>
+            <span class="header-logo">📰 뉴스 키워드 검색</span>
+            <span class="header-sub">네이버 + 구글뉴스 동시 검색</span>
         </div>
         """, unsafe_allow_html=True)
 
-        col_inp, col_btn, col_opt, col_debug = st.columns([4, 1, 1, 1])
+        col_inp, col_src, col_btn, col_opt, col_debug = st.columns([3, 2, 1, 1, 1])
         with col_inp:
             keyword = st.text_input("키워드", value=st.session_state.keyword_naver, placeholder="검색할 키워드 (예: 인공지능, 기후변화...)", label_visibility="collapsed")
+        with col_src:
+            sources = st.multiselect("검색 소스", ["네이버", "구글뉴스"], default=["네이버", "구글뉴스"], key="src_news")
         with col_btn:
             search_clicked = st.button("검색", use_container_width=True, key="btn_naver")
         with col_opt:
@@ -525,6 +617,9 @@ with main_col:
         if search_clicked and keyword.strip():
             st.session_state.keyword_naver = keyword.strip()
             st.session_state.articles_naver = []
+            if not sources:
+                st.warning("검색 소스를 1개 이상 선택해주세요.")
+                st.stop()
 
             import io as _io, contextlib
             status_box = st.empty()
@@ -534,7 +629,11 @@ with main_col:
             try:
                 log_buf = _io.StringIO()
                 with contextlib.redirect_stdout(log_buf):
-                    arts_list = search_naver_news(keyword.strip(), max_results=max_results, debug=debug_mode)
+                    arts_list = []
+                    if "네이버" in sources:
+                        arts_list.extend(search_naver_news(keyword.strip(), max_results=max_results, debug=debug_mode))
+                    if "구글뉴스" in sources:
+                        arts_list.extend(search_google_news(keyword.strip(), max_results=max_results, debug=debug_mode))
                 st.session_state.debug_log = log_buf.getvalue()
 
                 if not arts_list:
@@ -553,7 +652,7 @@ with main_col:
                     st.session_state.articles_naver = arts_list
                     saved = NEWS_REPOSITORY.save_articles_batch("naver", arts_list, keyword=keyword.strip())
                     status_box.empty(); prog_bar.empty()
-                    st.success(f"✅ 네이버 뉴스 **{total}건** 수집 완료!")
+                    st.success(f"✅ 뉴스 **{total}건** 수집 완료! (네이버/구글뉴스)")
                     if saved:
                         st.caption(f"💾 로컬 저장 완료: {saved['processed']}")
             except Exception as e:
@@ -916,4 +1015,8 @@ with main_col:
             components.html(html_block, height=760, scrolling=False)
 
 with chat_col:
-    _render_llm_chat_panel(app_mode)
+    chat_open = st.toggle("LLM 채팅창 열기", value=True, key="toggle_llm_chat")
+    if chat_open:
+        _render_llm_chat_panel(app_mode)
+    else:
+        st.caption("LLM 채팅창이 접혀 있습니다. 토글을 켜면 다시 표시됩니다.")
