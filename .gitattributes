@@ -1,0 +1,9 @@
+# Normalize line endings to prevent full-file diffs and merge conflicts
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

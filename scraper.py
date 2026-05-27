@@ -10,6 +10,8 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, urljoin, urlparse
 from collections import Counter
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 
 # ── HTML 파서 선택 ──────────────────────────────────────
 # lxml이 실제로 사용 가능하면 lxml을, 아니면 표준 html.parser로 fallback.
@@ -85,6 +87,16 @@ def normalize_published_at(date_text: str, now_utc: datetime | None = None) -> s
     if m:
         dt = now - timedelta(days=int(m.group(1)))
         return dt.replace(microsecond=0).isoformat()
+
+    # RFC2822 (예: Tue, 27 May 2026 10:30:00 GMT)
+    try:
+        dt = parsedate_to_datetime(text)
+        if dt is not None:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    except Exception:
+        pass
 
     # 절대일 처리
     cleaned = text.replace(".", "-").strip("- ")
@@ -282,6 +294,102 @@ def search_naver_news(keyword: str, max_results: int = 10, debug: bool = False) 
         except Exception:
             continue
 
+    return articles
+
+
+def search_google_news(keyword: str, max_results: int = 10, debug: bool = False) -> list[dict]:
+    encoded = quote(keyword)
+    rss_url = f"https://news.google.com/rss/search?q={encoded}&hl=ko&gl=KR&ceid=KR:ko"
+    session = _build_session()
+    try:
+        resp = session.get(rss_url, headers=_headers(), timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        raise RuntimeError(f"구글 뉴스 RSS 요청 실패: {e}")
+
+    try:
+        root = ET.fromstring(resp.text)
+    except ET.ParseError:
+        return []
+
+    def _resolve_google_link(url: str) -> str:
+        if not url:
+            return ""
+        try:
+            r = session.get(url, headers=_headers(), timeout=REQUEST_TIMEOUT, allow_redirects=True)
+            if r.url and r.url.startswith("http") and "news.google.com" not in r.url:
+                return r.url
+        except Exception:
+            pass
+        return url
+
+    def _extract_original_link(desc_html: str) -> str:
+        if not desc_html:
+            return ""
+        soup = _soup(desc_html)
+        for a in soup.find_all("a", href=True):
+            href = (a.get("href") or "").strip()
+            if href.startswith("http") and "news.google.com" not in href:
+                return href
+        return ""
+
+    def _extract_img_from_desc(desc_html: str) -> str:
+        if not desc_html:
+            return ""
+        soup = _soup(desc_html)
+        img = soup.find("img")
+        if img and img.get("src"):
+            src = img.get("src").strip()
+            if src.startswith("http"):
+                return src
+        return ""
+
+    articles = []
+    seen_links = set()
+    for item in root.findall('.//item'):
+        if len(articles) >= max_results:
+            break
+        title = (item.findtext('title') or '').strip()
+        raw_link = (item.findtext('link') or '').strip()
+        pub = (item.findtext('pubDate') or '').strip()
+        desc_html = (item.findtext('description') or '').strip()
+        desc_soup = _soup(desc_html) if desc_html else None
+        desc = desc_soup.get_text(" ", strip=True) if desc_soup else ""
+
+        source_tag = item.find('source')
+        press = (source_tag.text or 'Google News').strip() if source_tag is not None else 'Google News'
+
+        media_url = ""
+        media_tag = item.find('{http://search.yahoo.com/mrss/}content')
+        if media_tag is not None:
+            media_url = (media_tag.attrib.get('url') or '').strip()
+        if not media_url:
+            thumb_tag = item.find('{http://search.yahoo.com/mrss/}thumbnail')
+            if thumb_tag is not None:
+                media_url = (thumb_tag.attrib.get('url') or '').strip()
+        if not media_url:
+            media_url = _extract_img_from_desc(desc_html)
+
+        original_link = _extract_original_link(desc_html)
+        link = original_link or _resolve_google_link(raw_link)
+
+        if not title or not link or link in seen_links or 'news.google.com' in link:
+            continue
+        seen_links.add(link)
+
+        articles.append({
+            'title': title,
+            'press': press,
+            'date': pub,
+            'published_at': normalize_published_at(pub),
+            'link': link,
+            'summary': desc,
+            'content': '',
+            'keywords': extract_keywords(f"{title} {desc}"),
+            'img_url': media_url,
+        })
+    if debug:
+        print(f"[search_google_news] RSS 결과 {len(articles)}건")
     return articles
 
 
