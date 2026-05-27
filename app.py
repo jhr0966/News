@@ -63,7 +63,7 @@ st.markdown("""
 }
 
 .stApp { background: var(--bg) !important; }
-.block-container { padding: 2rem 3rem !important; max-width: 1400px !important; }
+.block-container { padding: 1.2rem 1.4rem 1.2rem 1.2rem !important; max-width: calc(100vw - 290px) !important; }
 
 .header-wrap { display: flex; align-items: baseline; gap: 14px; border-bottom: 3px solid var(--text-1); padding-bottom: 10px; margin-bottom: 2rem; }
 .header-logo { font-family: 'Noto Serif KR', serif; font-size: 2rem; font-weight: 700; color: var(--text-1); letter-spacing: -0.03em; }
@@ -111,6 +111,9 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 .stSidebar [role="radiogroup"] [data-baseweb="radio"] > div:first-child{margin-top:0 !important;}
 .stSidebar [role="radiogroup"] p{font-size:.92rem !important;font-weight:600 !important;color:#1F2937 !important;line-height:1.2 !important;}
 .stSidebar [role="radiogroup"] input:checked + div{background:linear-gradient(180deg,#FFFFFF 0%,#F1EFE7 100%);border-radius:10px;}
+.chat-panel-wrap{width:100%;}
+.chat-panel-wrap .stChatInputContainer{width:100% !important;}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -189,7 +192,7 @@ def _build_page_context(page_name: str) -> str:
 
     page_specific = {
         "🧭 대시보드": "대시보드 화면: 진행 단계, 주요 지표, 기능 진입 가이드 표시",
-        "🔍 네이버 뉴스 검색": f"네이버 검색 화면: 현재 키워드={st.session_state.get('keyword_naver','')} | 수집건수옵션=[5,10,15,20,30]",
+        "🔍 뉴스 키워드 검색": f"뉴스 키워드 검색 화면: 현재 키워드={st.session_state.get('keyword_naver','')} | 수집건수옵션=[5,10,15,20,30]",
         "🚀 최신 기술 동향 (AI/자동화)": f"기술 동향 화면: 대상 사이트={', '.join(TARGET_SITES.keys())}",
         "📊 인사이트 보드": "인사이트 화면: 언론사/키워드/일자별 차트와 집계",
         "🏭 조선소 작업 데이터": f"조선소 데이터 화면: 필수컬럼={', '.join(REQUIRED_COLUMNS)}",
@@ -258,6 +261,7 @@ def _ask_groq(messages: list[dict]) -> str:
 
 
 def _render_llm_chat_panel(page_name: str):
+    st.markdown('<div class="chat-panel-wrap">', unsafe_allow_html=True)
     st.markdown("### 🤖 화면 컨텍스트 LLM")
     st.caption("현재 메뉴의 맥락(화면/상태)을 자동 컨텍스트로 전달합니다.")
 
@@ -268,7 +272,7 @@ def _render_llm_chat_panel(page_name: str):
     with st.expander("컨텍스트 보기", expanded=False):
         st.code(context_text)
 
-    chat_box = st.container(height=520)
+    chat_box = st.container(height=620)
     with chat_box:
         for m in st.session_state.llm_chat_messages:
             with st.chat_message(m["role"]):
@@ -289,6 +293,7 @@ def _render_llm_chat_panel(page_name: str):
         st.session_state.llm_chat_messages.append({"role": "assistant", "content": answer})
         st.rerun()
 
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def _render_quick_guide():
@@ -546,7 +551,7 @@ def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
         with tabs[-1]:
             st.dataframe(df, use_container_width=True, height=500, column_config=_table_column_config())
 
-main_col, chat_col = st.columns([2.2, 1], gap="large")
+main_col, chat_col = st.columns([3.2, 1.35], gap="medium")
 
 with main_col:
     if st.session_state.get("persona_editor_open", False):
@@ -557,29 +562,40 @@ with main_col:
         </div>
         """, unsafe_allow_html=True)
         persona = st.session_state.get("persona_profile", {})
+        if "persona_keywords_draft" not in st.session_state:
+            st.session_state.persona_keywords_draft = list(persona.get("interest_keywords", []))
         c1, c2 = st.columns([2,1])
         with c1:
             department = st.text_input("부서", value=persona.get("department", ""))
             name = st.text_input("이름", value=persona.get("name", ""))
             role = st.text_input("직무", value=persona.get("role", ""))
             main_tasks = st.text_area("주요 업무", value=persona.get("main_tasks", ""), height=90)
-            current_keywords = list(persona.get("interest_keywords", []))
-            kw = st.text_input("관심 키워드 추가", key="persona_kw_input", placeholder="예: 안전, 용접 자동화 ")
+            current_keywords = list(st.session_state.get("persona_keywords_draft", []))
+            kw = st.text_input("관심 키워드 추가", key="persona_kw_input", placeholder="예: 안전, 용접, 자동화 ")
+
             raw_kw = st.session_state.get("persona_kw_input", "")
             if raw_kw and (raw_kw.endswith(" ") or raw_kw.endswith(",")):
                 for token in [t.strip() for t in re.split(r"[,\s]+", raw_kw) if t.strip()]:
                     if token not in current_keywords:
                         current_keywords.append(token)
+                st.session_state.persona_keywords_draft = current_keywords
                 st.session_state.persona_kw_input = ""
                 st.rerun()
+
             if st.button("키워드 등록"):
                 for token in [t.strip() for t in re.split(r"[,\s]+", kw) if t.strip()]:
                     if token not in current_keywords:
                         current_keywords.append(token)
+                st.session_state.persona_keywords_draft = current_keywords
+                st.session_state.persona_kw_input = ""
+                st.rerun()
+
             if current_keywords:
                 del_kw = st.selectbox("키워드 삭제", current_keywords)
                 if st.button("선택 키워드 삭제"):
                     current_keywords.remove(del_kw)
+                    st.session_state.persona_keywords_draft = current_keywords
+                    st.rerun()
             st.caption("현재 키워드: " + (", ".join(current_keywords) if current_keywords else "없음"))
         with c2:
             st.markdown("#### 프로필 사진")
@@ -601,11 +617,14 @@ with main_col:
                     "avatar_emoji": avatar_emoji, "photo_bytes": photo_bytes, "photo_name": photo_name,
                 }
                 st.session_state.persona_editor_open = False
+                st.session_state.pop("persona_keywords_draft", None)
                 st.success("저장 완료")
                 st.rerun()
         with s2:
             if st.button("취소", use_container_width=True):
                 st.session_state.persona_editor_open = False
+                st.session_state.pop("persona_keywords_draft", None)
+                st.session_state["persona_kw_input"] = ""
                 st.rerun()
 
     # ─────────────────────────────────────────────
