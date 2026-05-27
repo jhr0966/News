@@ -63,7 +63,7 @@ st.markdown("""
 }
 
 .stApp { background: var(--bg) !important; }
-.block-container { padding: 1.2rem 1.4rem 1.2rem 1.2rem !important; max-width: calc(100vw - 290px) !important; }
+.block-container { padding: 4.2rem 1.2rem 1.2rem 1.2rem !important; max-width: 100% !important; }
 
 .header-wrap { display: flex; align-items: baseline; gap: 14px; border-bottom: 3px solid var(--text-1); padding-bottom: 10px; margin-bottom: 2rem; }
 .header-logo { font-family: 'Noto Serif KR', serif; font-size: 2rem; font-weight: 700; color: var(--text-1); letter-spacing: -0.03em; }
@@ -113,6 +113,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 .stSidebar [role="radiogroup"] input:checked + div{background:linear-gradient(180deg,#FFFFFF 0%,#F1EFE7 100%);border-radius:10px;}
 .chat-panel-wrap{width:100%;}
 .chat-panel-wrap .stChatInputContainer{width:100% !important;}
+.portal-hero{max-width:980px;margin:0 auto 1.1rem auto;text-align:center;}
+.portal-title{font-family:'Noto Serif KR',serif;font-size:2.2rem;font-weight:700;color:#111827;letter-spacing:-.02em;margin-bottom:.35rem;}
+.portal-sub{font-family:'IBM Plex Sans KR',sans-serif;color:#6B7280;font-size:.92rem;margin-bottom:1.15rem;}
+.portal-search-wrap{max-width:980px;margin:0 auto 0.8rem auto;background:rgba(255,255,255,.72);border:1px solid #E5E7EB;border-radius:16px;padding:14px;box-shadow:0 2px 10px rgba(15,23,42,.04);}
 
 </style>
 """, unsafe_allow_html=True)
@@ -551,7 +555,7 @@ def render_results(articles, keyword_display, session_key_prefix, mode="naver"):
         with tabs[-1]:
             st.dataframe(df, use_container_width=True, height=500, column_config=_table_column_config())
 
-main_col, chat_col = st.columns([3.2, 1.35], gap="medium")
+main_col, chat_col = st.columns([3.6, 1.4], gap="small")
 
 with main_col:
     if st.session_state.get("persona_editor_open", False):
@@ -640,13 +644,13 @@ with main_col:
         # ─────────────────────────────────────────────
         elif app_mode == "🔍 뉴스 키워드 검색":
             st.markdown("""
-            <div class="header-wrap">
-                <span class="header-logo">📰 뉴스 키워드 검색</span>
-                <span class="header-sub">네이버 + 구글뉴스 동시 검색</span>
+            <div class="portal-hero">
+                <div class="portal-title">뉴스 키워드 검색</div>
+                <div class="portal-sub">네이버 + 구글뉴스 동시 검색</div>
             </div>
             """, unsafe_allow_html=True)
-
-            col_inp, col_src, col_btn, col_opt, col_debug = st.columns([3, 2, 1, 1, 1])
+            st.markdown('<div class="portal-search-wrap">', unsafe_allow_html=True)
+            col_inp, col_src, col_btn, col_opt, col_debug = st.columns([4, 2.3, 1.1, 1, 0.9], gap="small")
             with col_inp:
                 keyword = st.text_input("키워드", value=st.session_state.keyword_naver, placeholder="검색할 키워드 (예: 인공지능, 기후변화...)", label_visibility="collapsed")
             with col_src:
@@ -656,7 +660,8 @@ with main_col:
             with col_opt:
                 max_results = st.selectbox("수집 건수", [5, 10, 15, 20, 30], index=1, label_visibility="visible", key="max_naver")
             with col_debug:
-                debug_mode = st.checkbox("🔧 디버그", value=False, key="dbg_naver")
+                debug_mode = st.checkbox("디버그", value=False, key="dbg_naver")
+            st.markdown('</div>', unsafe_allow_html=True)
 
             if search_clicked and keyword.strip():
                 st.session_state.keyword_naver = keyword.strip()
